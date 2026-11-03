@@ -14,6 +14,8 @@ close, volume = load_prices()
 macro = load_macro().reindex(close.index).ffill()
 news = load_news_sentiment(list(close.columns), close.index)
 panel = build_panel(close, volume, macro, news, horizon=config.HORIZON)
+Q = close.iloc[-60:].copy(); Q.index.name = "date"
+Q.reset_index().melt("date", var_name="ticker", value_name="close").assign(date=lambda d: pd.to_datetime(d.date).dt.strftime("%Y-%m-%d")).round(4).to_csv(f"{OUT}/quotes.csv", index=False)
 names = {"linear": "Линейная регрессия", "tree": "Дерево решений"}
 eq, met, fc, wts, imp = {}, [], [], [], []
 for kind, nm in names.items():
