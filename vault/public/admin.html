@@ -70,10 +70,16 @@ function paneP() {
       <td>${!p.published ? '<span class="muted">черновик</span>' : p.opens_at <= D.now ? '<span class="green">открыт</span>' : '<span class="gold">ждёт</span>'}</td>
       <td class="r">${p.solvers}</td><td class="r">${p.tries}</td><td><button class="ghost small" data-edit="${p.num}">Изменить</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Замков пока нет</td></tr>'}
     </tbody></table></div>
-    <div class="bar"><button id="add">Добавить замок</button></div>
+    <div class="bar"><button id="add">Добавить замок</button><input type="file" id="pack" accept=".json" style="max-width:280px"><button class="ghost" id="imp">Импортировать набор</button><span class="ok" id="impmsg"></span></div>
     <p class="note">Разминка — простой вопрос с фиксированной ценой («Баллов в начале»): без бонусов за скорость и штрафов. Разминкам удобно давать номера с 11.</p>
     <p class="note">Игроки видят только опубликованные замки. До времени открытия им видны номер и таймер, но не название и не текст.</p>`;
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editing = D.puzzles.find(p => p.num === Number(b.dataset.edit)); paneP(); });
+  $('#imp').onclick = async () => {
+    const f = $('#pack').files[0]; if (!f) { $('#impmsg').textContent = 'Сначала выбери файл набора (.json)'; return; }
+    $('#impmsg').textContent = 'Загружаю…';
+    try { const r = await api('/api/admin/import', JSON.parse(await f.text())); alert(`Импортировано загадок: ${r.imported}, файлов: ${r.files}`); load(); }
+    catch (e) { $('#impmsg').textContent = e.message; }
+  };
   $('#add').onclick = () => { const n = Math.max(0, ...D.puzzles.map(p => p.num)) + 1; editing = { num: n, title: '', body: '', opens_at: 0, max_points: 100, min_points: 30, decay_minutes: 720, answers: [], hints: [], published: 0, isNew: true }; paneP(); };
 }
 
@@ -181,6 +187,14 @@ function paneSet() {
       <label>Ответ (код от кейса)</label><input id="fa" value="${esc(D.final_answer)}" style="max-width:260px">
       <div class="bar"><button id="saveFinal">Сохранить</button><span class="ok" id="fok"></span></div></div>`);
   $('#saveFinal').onclick = async () => { await api('/api/admin/settings', { final_question: $('#fq').value, final_answer: $('#fa').value }); $('#fok').textContent = 'Сохранено'; };
+  $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Шифратор для замка №1</b><p class="note">Сразу после шоу: вставь исходный текст из документа организатора и цену аукциона. Каждая буква сдвигается вперёд на очередную цифру ключа (алфавит из 33 букв).</p>
+      <label>Исходный текст</label><textarea id="gp" style="min-height:90px;font-family:var(--sans)"></textarea>
+      <label>Ключ — цена аукциона, только цифры</label><input id="gk" inputmode="numeric" style="max-width:200px">
+      <label>Шифр (вставь в текст замка №1 между &lt;pre&gt; и &lt;/pre&gt;)</label><textarea id="gc" readonly style="min-height:90px"></textarea></div>`);
+  const ABC = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
+  const enc = () => { const key = $('#gk').value.replace(/\D/g, ''); let i = 0;
+    $('#gc').value = key ? [...$('#gp').value].map(ch => { const k = ABC.indexOf(ch.toLowerCase()); return k < 0 ? ch.toUpperCase() : ABC[(k + Number(key[i++ % key.length])) % 33].toUpperCase(); }).join('') : ''; };
+  $('#gp').oninput = enc; $('#gk').oninput = enc;
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
 }

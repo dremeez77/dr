@@ -480,6 +480,35 @@ route('POST', /^\/api\/admin\/puzzle\/(\d+)\/delete$/, ctx => {
   return { ok: true };
 });
 
+// Импорт готового набора загадок одним файлом: { files: { имя: base64 }, puzzles: [...] }.
+// В тексте загадки {{file:имя}} заменяется на адрес загруженного файла.
+route('POST', /^\/api\/admin\/import$/, async ctx => {
+  requireAdmin(ctx);
+  const pack = await ctx.body(60 * 1024 * 1024);
+  const urls = {};
+  for (const [name, data] of Object.entries(pack.files || {})) {
+    const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1];
+    if (!ext || !['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp3', 'wav', 'ogg', 'mp4', 'pdf'].includes(ext.toLowerCase())) fail(400, 'Недопустимый файл в наборе: ' + name);
+    const fname = `${rand(10)}.${ext.toLowerCase()}`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, fname), Buffer.from(String(data), 'base64'));
+    urls[name] = '/uploads/' + fname;
+  }
+  let n = 0;
+  for (const p of pack.puzzles || []) {
+    const num = Number(p.num), opens = new Date(p.opens_at).getTime();
+    if (!(num >= 1 && num <= 99) || !(opens > 0) || !p.title) fail(400, 'Ошибка в наборе: замок ' + p.num);
+    const body = String(p.body || '').replace(/\{\{file:([^}]+)\}\}/g, (m, f) => urls[f] || m);
+    const kind = p.kind === 'warmup' ? 'warmup' : 'lock';
+    const max = Number(p.max_points) || 100, min = kind === 'warmup' ? max : Number(p.min_points) || 0;
+    q('DELETE FROM puzzles WHERE num=? AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.puzzle_id=puzzles.id)').run(num);
+    if (q('SELECT 1 FROM puzzles WHERE num=?').get(num)) fail(409, `Замок №${num} уже есть, и по нему были попытки. Удали его вручную, если это точно нужно.`);
+    q(`INSERT INTO puzzles(num,kind,title,body,opens_at,max_points,min_points,decay_minutes,answers,hints,published) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(num, kind, String(p.title), body, opens, max, min, Number(p.decay_minutes) || 720, JSON.stringify(p.answers || []), JSON.stringify(p.hints || []), p.published ? 1 : 0);
+    n++;
+  }
+  return { imported: n, files: Object.keys(urls).length };
+});
+
 route('GET', /^\/api\/admin\/attempts$/, ctx => {
   requireAdmin(ctx);
   return { rows: q(`SELECT a.created_at, a.answer, a.correct, p.num, u.nick, u.group_name
