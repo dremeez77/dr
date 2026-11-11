@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сцена: история с голосованием</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { background: #040b2c; color: #e9edf1; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow: hidden; cursor: none; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  #app { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 34vw; gap: 3vw; padding: 5vh 4vw; box-sizing: border-box; }
+  .step { font: 700 1.5vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .2em; color: #93a5cf; }
+  h1 { font-size: 4.6vw; line-height: 1.05; margin: 1.6vh 0 2vh; }
+  .txt { font-size: 2.05vw; line-height: 1.35; color: #d5def3; margin: 0 0 3vh; }
+  .opt { position: relative; margin-top: 1.6vh; padding: 1.9vh 1.6vw; border: .15vw solid #1d2f73; border-radius: 1.2vw; font-size: 2vw; line-height: 1.25; overflow: hidden; background: #0a1543; }
+  .opt .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(25,181,254,.16); transition: width .5s; }
+  .opt .row { position: relative; display: flex; gap: 1.2vw; align-items: baseline; }
+  .opt .l { font: 700 2vw/1 ui-monospace, Menlo, Consolas, monospace; color: #19b5fe; }
+  .opt .n { margin-left: auto; font: 700 2vw/1 ui-monospace, Menlo, Consolas, monospace; color: #93a5cf; white-space: nowrap; }
+  .opt.win { border-color: #ff5d5d; } .opt.win .bar { background: rgba(255,93,93,.22); } .opt.win .l, .opt.win .n { color: #ff5d5d; }
+  .opt.dim { opacity: .45; }
+  .outcome { margin-top: 2.6vh; font-size: 1.9vw; line-height: 1.35; padding-left: 1.4vw; border-left: .4vw solid #ff5d5d; min-height: 5vh; }
+  .outcome.safe { border-color: #3ddc84; }
+  aside { display: flex; flex-direction: column; align-items: stretch; gap: 2.4vh; }
+  .card { background: #0a1543; border: .12vw solid #1d2f73; border-radius: 1.4vw; padding: 2.4vh 1.6vw; text-align: center; }
+  .card .lbl { font: 700 1.15vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .18em; color: #93a5cf; }
+  #debt { font: 800 4.7vw/1.1 ui-monospace, Menlo, Consolas, monospace; color: #ff5d5d; margin-top: 1.2vh; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #debt.zero { color: #3ddc84; }
+  #delta { font: 700 1.9vw/1 ui-monospace, Menlo, Consolas, monospace; color: #ff5d5d; height: 2.2vw; margin-top: .6vh; }
+  #qr { background: #fff; border-radius: 1vw; padding: 1.2vh; margin: 1.4vh auto 0; width: 25vh; }
+  #qr svg { display: block; width: 100%; height: auto; }
+  .url { font: 700 1.6vw/1.2 ui-monospace, Menlo, Consolas, monospace; margin-top: 1.2vh; overflow-wrap: anywhere; }
+  .voters { font-size: 1.5vw; color: #93a5cf; margin-top: .8vh; }
+  /* Заставка и финал занимают весь экран */
+  #full { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 5vh 7vw; background: #040b2c; }
+  #full h1 { font-size: 4.6vw; margin: 1.5vh 0; }
+  #full p { font-size: 2.1vw; color: #d5def3; max-width: 72vw; line-height: 1.35; margin: 1.6vh 0; }
+  #full .big { font: 800 13vw/1 ui-monospace, Menlo, Consolas, monospace; color: #ff5d5d; margin: 1vh 0; white-space: nowrap; }
+  #full .big.zero { color: #3ddc84; }
+  #full .sub { font-size: 2.6vw; color: #e9edf1; }
+  .help { position: fixed; left: 1vw; bottom: 1vh; font: 11px/1 ui-monospace, monospace; color: rgba(128,128,128,.45); }
+  #warn { position: fixed; top: 0; left: 0; right: 0; background: #ff5d5d; color: #111; font: 700 16px/1.3 system-ui; padding: 10px; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <main>
+    <div class="step" id="step"></div>
+    <h1 id="title"></h1>
+    <p class="txt" id="text"></p>
+    <div id="opts"></div>
+    <div class="outcome" id="outcome" style="visibility:hidden"></div>
+  </main>
+  <aside>
+    <div class="card"><div class="lbl" id="debtLbl">ДОЛГ</div><div id="debt">0 ₽</div><div id="delta"></div></div>
+    <div class="card"><div class="lbl">ГОЛОСУЙ С ТЕЛЕФОНА</div><div id="qr"></div><div class="url" id="url"></div><div class="voters" id="voters"></div></div>
+  </aside>
+</div>
+<div id="full"></div>
+<div id="warn">Управление выключено: сначала войди в /admin в этом же браузере, потом обнови страницу.</div>
+<div class="help">ПРОБЕЛ или →: дальше · Shift+R: начать заново · F: полный экран</div>
+<script src="/vendor/qrcode.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rub = n => Math.round(n).toLocaleString('ru-RU') + ' ₽';
+const L = ['А', 'Б', 'В', 'Г'];
+const qr = qrcode(0, 'M'); qr.addData(location.origin + '/vote'); qr.make();
+$('qr').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 1, scalable: true });
+$('url').textContent = location.host + '/vote';
+
+let S = null, shownDebt = 0, sceneKey = '', busy = false;
+
+async function load() {
+  try { S = await (await fetch('/api/story')).json(); } catch { return; }
+  render();
+}
+
+function render() {
+  const full = $('full');
+  if (S.phase === 'idle') {
+    full.style.display = 'flex';
+    full.innerHTML = `<div class="step">${esc(S.name).toUpperCase()}</div><h1>Решаете вы</h1><p>${esc(S.intro)}</p>
+      <div style="background:#fff;border-radius:1vw;padding:1.2vh;width:34vh;margin-top:1vh">${$('qr').innerHTML}</div>
+      <p class="mono" style="color:#19b5fe;font-weight:700">${esc(location.host)}/vote</p>`;
+    shownDebt = 0; return;
+  }
+  if (S.phase === 'final') {
+    const months = S.debt / S.income;
+    full.style.display = 'flex';
+    full.innerHTML = `<div class="step">ИТОГ: ДОЛГ ${esc(S.heroGen).toUpperCase()}</div><div class="big ${S.debt ? '' : 'zero'}">${rub(S.debt)}</div>
+      ${S.debt ? `<div class="sub">Это ${months >= 2 ? Math.round(months) + ' ' + plural(Math.round(months), 'месяц', 'месяца', 'месяцев') : 'больше месяца'} жизни без еды, жилья и проезда</div>` : ''}
+      <p>${esc(S.ending)}</p>`;
+    return;
+  }
+  full.style.display = 'none';
+  const k = S.scene + '|' + S.phase;
+  const total = (S.counts || []).reduce((a, b) => a + b, 0);
+  if (k !== sceneKey) {
+    sceneKey = k;
+    $('step').textContent = `ВОПРОС ${S.scene + 1} ИЗ ${S.total}`;
+    $('title').textContent = S.title; $('text').textContent = S.text;
+    $('opts').innerHTML = S.choices.map((c, i) => `<div class="opt" id="o${i}"><div class="bar"></div><div class="row"><span class="l">${L[i]}</span><span>${esc(c)}</span><span class="n"></span></div></div>`).join('');
+    const out = $('outcome');
+    if (S.phase === 'result') {
+      out.style.visibility = 'visible'; out.textContent = S.outcome; out.className = 'outcome' + (S.delta ? '' : ' safe');
+      $('delta').textContent = S.delta ? '+' + rub(S.delta) : 'долг не вырос';
+      $('delta').style.color = S.delta ? '#ff5d5d' : '#3ddc84';
+    } else { out.style.visibility = 'hidden'; $('delta').textContent = ''; }
+  }
+  S.choices.forEach((_, i) => {
+    const el = $('o' + i); if (!el) return;
+    const n = S.counts ? S.counts[i] : 0;
+    el.querySelector('.bar').style.width = (total ? n / total * 100 : 0) + '%';
+    el.querySelector('.n').textContent = S.counts ? (S.phase === 'result' ? (total ? Math.round(n / total * 100) : 0) + '%' : n) : '';
+    el.className = 'opt' + (S.phase === 'result' ? (i === S.pick ? ' win' : ' dim') : '');
+  });
+  $('voters').textContent = S.phase === 'voting' ? `Проголосовало: ${S.voters}` : `Голосов: ${total}`;
+  $('debtLbl').textContent = 'ДОЛГ ' + S.heroGen.toUpperCase();
+}
+const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11) ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
+
+// Счётчик долга «накручивается» до нового значения.
+setInterval(() => {
+  if (!S) return;
+  if (shownDebt !== S.debt) shownDebt += Math.sign(S.debt - shownDebt) * Math.max(1, Math.ceil(Math.abs(S.debt - shownDebt) / 14));
+  $('debt').textContent = rub(shownDebt); $('debt').className = shownDebt ? '' : 'zero';
+}, 45);
+
+async function control(action) {
+  if (busy) return; busy = true;
+  try {
+    const r = await fetch('/api/story/control', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
+    $('warn').style.display = r.status === 401 || r.status === 403 ? 'block' : 'none';
+  } catch {}
+  await load(); busy = false;
+}
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'PageDown') { e.preventDefault(); control('next'); }
+  if (e.code === 'KeyR' && e.shiftKey) { sceneKey = ''; control('reset'); }
+  if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+});
+load(); setInterval(load, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Финансовая грамотность — слайд 7</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #000; overflow: hidden; cursor: none; }
+  .layer { position: absolute; inset: 0; }
+
+  /* Нарочно скучный слайд, который «взламывают». Свой слайд: /stage/hack?bg=/uploads/файл.png */
+  #slide { background: #fff center/contain no-repeat; color: #1f2d3d; font-family: Arial, Helvetica, sans-serif; padding: 7vh 7vw; box-sizing: border-box; }
+  #slide h1 { font-size: 4.6vw; margin: 0 0 1vh; color: #1f4e79; }
+  #slide .line { height: .5vh; background: #1f4e79; width: 100%; margin-bottom: 5vh; }
+  #slide li { font-size: 2.9vw; margin: 2.4vh 0; }
+  #slide .pg { position: absolute; right: 4vw; bottom: 4vh; font-size: 1.6vw; color: #8a8a8a; }
+
+  /* Помехи */
+  #slide.glitch { animation: shake .09s steps(2) infinite; }
+  #slide.glitch::before, #slide.glitch::after { content: ""; position: absolute; inset: 0; background: inherit; mix-blend-mode: multiply; }
+  #slide.glitch::before { background: rgba(255,0,60,.35); transform: translate(1.2vw, 0); clip-path: inset(18% 0 55% 0); animation: slice .18s steps(3) infinite; }
+  #slide.glitch::after { background: rgba(0,220,255,.35); transform: translate(-1.2vw, 0); clip-path: inset(60% 0 12% 0); animation: slice .23s steps(4) infinite reverse; }
+  @keyframes shake { 0% { transform: translate(0,0) skewX(0); filter: none; } 50% { transform: translate(-1.4vw,.6vh) skewX(-3deg); filter: invert(1) hue-rotate(90deg); } 100% { transform: translate(1vw,-.5vh) skewX(2deg); filter: contrast(2.2) saturate(3); } }
+  @keyframes slice { 0% { clip-path: inset(8% 0 78% 0); } 33% { clip-path: inset(42% 0 31% 0); } 66% { clip-path: inset(71% 0 9% 0); } 100% { clip-path: inset(25% 0 60% 0); } }
+  #noise { display: none; opacity: .55; background-image: repeating-linear-gradient(0deg, rgba(255,255,255,.16) 0 2px, transparent 2px 5px); animation: roll .12s linear infinite; mix-blend-mode: difference; }
+  @keyframes roll { to { background-position: 0 10px; } }
+
+  /* Сообщение */
+  #term { display: none; flex-direction: column; background: #000; color: #19b5fe; font: 600 min(2.25vw, 4vh)/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding: 6vh 6vw; box-sizing: border-box; }
+  #term::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 2px, transparent 2px 4px); }
+  #lines div { min-height: 1.5em; text-shadow: 0 0 1.2vw rgba(25,181,254,.55); white-space: pre-wrap; }
+  .cur::after { content: "█"; animation: blink .8s steps(1) infinite; margin-left: .2em; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #final { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 4vw; opacity: 0; transition: opacity 1.2s; }
+  #final.on { opacity: 1; }
+  #qr { background: #19b5fe; padding: 1.2vh; border-radius: 1.2vh; }
+  #qr svg { display: block; width: 27vh; height: 27vh; }
+  #final .r { text-align: right; }
+  #final .lbl { font-size: 1.7vw; letter-spacing: .2em; color: #1487c0; }
+  #cd { font-size: min(7vw, 13vh); line-height: 1; font-variant-numeric: tabular-nums; }
+  #url { font-size: 2.6vw; margin-top: 1vh; color: #fff; }
+  .help { position: fixed; left: 1vw; bottom: 1vh; font: 11px/1 ui-monospace, monospace; color: rgba(128,128,128,.4); z-index: 9; }
+</style>
+</head>
+<body>
+<div class="layer" id="slide">
+  <h1>Финансовая грамотность: основные понятия</h1>
+  <div class="line"></div>
+  <ul>
+    <li>Доходы и расходы домохозяйства</li>
+    <li>Понятие личного бюджета</li>
+    <li>Виды банковских продуктов</li>
+    <li>Права потребителя финансовых услуг</li>
+  </ul>
+  <div class="pg">7 / 42</div>
+</div>
+<div class="layer" id="noise"></div>
+<div class="layer" id="term"><div id="lines"></div>
+  <div id="final">
+    <div id="qr"></div>
+    <div class="r"><div class="lbl" id="cdlbl">ПЕРВЫЙ ЗАМОК ОТКРОЕТСЯ ЧЕРЕЗ</div><div id="cd">--:--:--</div><div id="url"></div></div>
+  </div>
+</div>
+<div class="help">ПРОБЕЛ или кликер: взлом · R: сброс · F: полный экран</div>
+<script src="/vendor/qrcode.js"></script>
+<script>
+'use strict';
+// Текст сообщения можно менять прямо здесь. {time} заменится на время открытия первого замка.
+const LINES = [
+  '> СОЕДИНЕНИЕ ПЕРЕХВАЧЕНО',
+  '',
+  '> Вам рассказывают про деньги. Скучно, правда?',
+  '> Приз от банка уже не у организаторов. Он в моём хранилище.',
+  '> На нём четыре замка. Первый откроется {time}.',
+  '> Откроет тот, кто умеет думать сам. Нейросеть не поможет.',
+  '',
+  '> Время пошло.  — ХРАНИТЕЛЬ',
+];
+const params = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+if (params.get('bg')) { $('slide').innerHTML = ''; $('slide').style.backgroundImage = `url("${params.get('bg').replace(/"/g, '')}")`; }
+
+const qr = qrcode(0, 'M'); qr.addData(location.origin + '/'); qr.make();
+$('qr').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+$('qr').querySelector('rect').setAttribute('fill', '#19b5fe');
+$('url').textContent = location.host;
+
+let opensAt = 0, offset = 0, timers = [], audio = null, running = false;
+fetch('/api/state').then(r => r.json()).then(s => {
+  offset = s.now - Date.now();
+  const p = s.puzzles.find(x => x.opens_at > s.now) || s.puzzles[0];
+  if (p) opensAt = p.opens_at;
+}).catch(() => {});
+const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+
+function timeText() {
+  if (!opensAt) return 'совсем скоро';
+  const d = new Date(opensAt), today = new Date().toDateString() === d.toDateString();
+  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return today ? `сегодня в ${hm}` : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + ` в ${hm}`;
+}
+
+// Звук синтезируется в браузере, файлы не нужны.
+function sound() {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const t = audio.currentTime, len = 1.7;
+    const buf = audio.createBuffer(1, audio.sampleRate * len, audio.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (Math.random() < .5 ? 1 : .25);
+    const src = audio.createBufferSource(), g = audio.createGain();
+    src.buffer = buf; g.gain.setValueAtTime(.5, t); g.gain.setValueAtTime(.5, t + len - .15); g.gain.linearRampToValueAtTime(0, t + len);
+    src.connect(g).connect(audio.destination); src.start(t);
+    const o = audio.createOscillator(), og = audio.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(55, t + len); og.gain.setValueAtTime(0, t + len);
+    og.gain.linearRampToValueAtTime(.12, t + len + 1); og.gain.linearRampToValueAtTime(0, t + len + 14);
+    o.connect(og).connect(audio.destination); o.start(t + len); o.stop(t + len + 14);
+  } catch {}
+}
+function click() {
+  if (!audio) return;
+  try {
+    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+    o.type = 'square'; o.frequency.value = 900 + Math.random() * 500; g.gain.setValueAtTime(.025, t); g.gain.exponentialRampToValueAtTime(.0001, t + .03);
+    o.connect(g).connect(audio.destination); o.start(t); o.stop(t + .04);
+  } catch {}
+}
+
+function typeLines(i) {
+  if (i >= LINES.length) { later(() => $('final').classList.add('on'), 700); return; }
+  const text = LINES[i].replace('{time}', timeText());
+  const el = document.createElement('div'); $('lines').appendChild(el);
+  document.querySelectorAll('.cur').forEach(c => c.classList.remove('cur')); el.classList.add('cur');
+  if (!text) { later(() => typeLines(i + 1), 350); return; }
+  let n = 0;
+  (function step() {
+    el.textContent = text.slice(0, ++n);
+    if (text[n - 1] !== ' ') click();
+    if (n < text.length) later(step, text[n - 1] === ' ' && text[n] === ' ' ? 4 : 30 + Math.random() * 35);
+    else later(() => typeLines(i + 1), 650);
+  })();
+}
+
+function hack() {
+  if (running) return; running = true;
+  sound();
+  $('slide').classList.add('glitch'); $('noise').style.display = 'block';
+  later(() => { $('slide').style.display = 'none'; $('noise').style.display = 'none'; $('term').style.display = 'flex'; }, 1700);
+  later(() => typeLines(0), 2900);
+}
+function reset() {
+  timers.forEach(clearTimeout); timers = []; running = false;
+  $('slide').classList.remove('glitch'); $('slide').style.display = 'block'; $('noise').style.display = 'none';
+  $('term').style.display = 'none'; $('lines').innerHTML = ''; $('final').classList.remove('on');
+}
+setInterval(() => {
+  if (!opensAt) return;
+  const ms = opensAt - (Date.now() + offset);
+  if (ms <= 0) { $('cdlbl').textContent = 'ПЕРВЫЙ ЗАМОК УЖЕ ОТКРЫТ'; $('cd').textContent = 'ВХОДИ'; return; }
+  const s = Math.floor(ms / 1000), p = n => String(n).padStart(2, '0'), d = Math.floor(s / 86400);
+  $('cd').textContent = (d ? d + 'д ' : '') + `${p(Math.floor(s % 86400 / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
+}, 250);
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter' || e.code === 'PageDown' || e.code === 'ArrowRight') { e.preventDefault(); hack(); }
+  if (e.code === 'KeyR') reset();
+  if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+});
+</script>
+</body>
+</html>
