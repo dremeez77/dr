@@ -60,7 +60,7 @@
     <div class="r"><div class="lbl" id="cdlbl">ПЕРВЫЙ ЗАМОК ОТКРОЕТСЯ ЧЕРЕЗ</div><div id="cd">--:--:--</div><div id="url"></div></div>
   </div>
 </div>
-<div class="help">ПРОБЕЛ: взлом · R: сброс · F: полный экран</div>
+<div class="help">ПРОБЕЛ или кликер: взлом · R: сброс · F: полный экран</div>
 <script src="/vendor/qrcode.js"></script>
 <script>
 'use strict';
@@ -159,7 +159,7 @@ setInterval(() => {
   $('cd').textContent = (d ? d + 'д ' : '') + `${p(Math.floor(s % 86400 / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
 }, 250);
 addEventListener('keydown', e => {
-  if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); hack(); }
+  if (e.code === 'Space' || e.code === 'Enter' || e.code === 'PageDown' || e.code === 'ArrowRight') { e.preventDefault(); hack(); }
   if (e.code === 'KeyR') reset();
   if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
 });

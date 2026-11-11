@@ -48,7 +48,7 @@ setInterval(poll, 1500); poll();
 // Счётчик «докручивается» до реального значения, чтобы на экране было движение.
 setInterval(() => { if (revealed && shown < target) { shown += Math.max(1, Math.ceil((target - shown) / 12)); document.getElementById('count').textContent = shown; } }, 60);
 addEventListener('keydown', e => {
-  if (e.code === 'Space' || e.code === 'Enter') { revealed = true; shown = 0; document.getElementById('count').textContent = 0; document.getElementById('bait').style.display = 'none'; document.getElementById('reveal').style.display = 'flex'; }
+  if (e.code === 'Space' || e.code === 'Enter' || e.code === 'PageDown' || e.code === 'ArrowRight') { revealed = true; shown = 0; document.getElementById('count').textContent = 0; document.getElementById('bait').style.display = 'none'; document.getElementById('reveal').style.display = 'flex'; }
   if (e.code === 'KeyB') { revealed = false; document.getElementById('bait').style.display = 'flex'; document.getElementById('reveal').style.display = 'none'; }
   if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
 });

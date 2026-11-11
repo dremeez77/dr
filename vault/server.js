@@ -305,6 +305,76 @@ route('POST', /^\/api\/trap\/hit$/, ctx => {
 });
 route('GET', /^\/api\/trap$/, () => ({ count: Number(kvGet('trap_count') || 0) }));
 
+// --- Сцена: история с голосованием зала ---
+// Сюжет лежит в story.json. Голоса хранятся в памяти: они нужны только на время одного вопроса.
+const STORY = JSON.parse(fs.readFileSync(path.join(__dirname, 'story.json'), 'utf8'));
+const storyFresh = () => ({ phase: 'idle', scene: -1, debt: 0, picks: [] });
+let story = parse(kvGet('story'), null) || storyFresh();
+let votes = new Map(); // id зрителя -> номер варианта в текущем вопросе
+const saveStory = () => kvSet('story', JSON.stringify(story));
+const isAdmin = ctx => { try { requireAdmin(ctx); return true; } catch { return false; } };
+function tally() {
+  const sc = STORY.scenes[story.scene];
+  const c = sc ? sc.choices.map(() => 0) : [];
+  for (const v of votes.values()) if (c[v] !== undefined) c[v]++;
+  return c;
+}
+function storyStep() {
+  const last = STORY.scenes.length - 1;
+  if (story.phase === 'idle') { story = { ...storyFresh(), phase: 'voting', scene: 0 }; votes = new Map(); }
+  else if (story.phase === 'voting') {
+    const counts = tally(), sc = STORY.scenes[story.scene];
+    // Побеждает вариант с большинством; при равенстве — тот, что дороже для героя.
+    let pick = 0;
+    sc.choices.forEach((c, i) => { if (counts[i] > counts[pick] || (counts[i] === counts[pick] && c.debt > sc.choices[pick].debt)) pick = i; });
+    story.picks[story.scene] = pick; story.counts = counts; story.debt += sc.choices[pick].debt; story.phase = 'result';
+  }
+  else if (story.phase === 'result') {
+    if (story.scene >= last) story.phase = 'final';
+    else { story.scene++; story.phase = 'voting'; story.counts = null; votes = new Map(); }
+  }
+  saveStory();
+}
+
+route('GET', /^\/api\/story$/, ctx => {
+  let vid = ctx.cookies.vid;
+  if (!vid) { vid = rand(10); setCookie(ctx.res, 'vid', vid, 60 * 60 * 12); }
+  const sc = STORY.scenes[story.scene] || null;
+  const out = { phase: story.phase, scene: story.scene, total: STORY.scenes.length, debt: story.debt,
+    name: STORY.title, hero: STORY.hero, heroGen: STORY.heroGen || STORY.hero, income: STORY.income, intro: STORY.intro, voters: votes.size };
+  if (sc && story.phase !== 'final') {
+    Object.assign(out, { title: sc.title, text: sc.text, choices: sc.choices.map(c => c.label), my: votes.has(vid) ? votes.get(vid) : null });
+    if (story.phase === 'result') {
+      const pick = story.picks[story.scene];
+      Object.assign(out, { counts: story.counts || tally(), pick, outcome: sc.choices[pick].outcome, delta: sc.choices[pick].debt });
+    } else if (isAdmin(ctx)) out.counts = tally(); // живые столбики видит только экран на сцене
+  }
+  if (story.phase === 'final') {
+    out.ending = (STORY.endings.find(e => story.debt <= e.max) || {}).text || '';
+    out.picks = story.picks.map((p, i) => ({ title: STORY.scenes[i].title, label: STORY.scenes[i].choices[p].label, delta: STORY.scenes[i].choices[p].debt }));
+  }
+  return out;
+});
+
+route('POST', /^\/api\/story\/vote$/, async ctx => {
+  const { choice } = await ctx.body();
+  const sc = STORY.scenes[story.scene];
+  if (story.phase !== 'voting' || !sc) fail(409, 'Голосование сейчас закрыто');
+  if (!ctx.cookies.vid) fail(400, 'Обнови страницу');
+  if (!Number.isInteger(choice) || !sc.choices[choice]) fail(400, 'Нет такого варианта');
+  votes.set(ctx.cookies.vid, choice); // передумать можно, пока вопрос открыт
+  return { ok: true, my: choice };
+});
+
+route('POST', /^\/api\/story\/control$/, async ctx => {
+  requireAdmin(ctx);
+  const { action } = await ctx.body();
+  if (action === 'next') storyStep();
+  else if (action === 'reset') { story = storyFresh(); votes = new Map(); saveStory(); }
+  else fail(400, 'Неизвестная команда');
+  return { phase: story.phase, scene: story.scene };
+});
+
 // --- Админка ---
 route('POST', /^\/api\/admin\/login$/, async ctx => {
   rateLimit('adm:' + ctx.ip, 8, 60000);
@@ -417,7 +487,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html' };
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));

@@ -114,6 +114,34 @@ function client(base) {
   assert.equal(polled.user.provider, 'vk');
   assert.equal((await v('/api/state')).body.user.needs_profile, true);
 
+  // --- история с голосованием зала ---
+  const v1 = client(base), v2 = client(base), v3 = client(base);
+  assert.equal((await v1('/api/story')).body.phase, 'idle');
+  await v2('/api/story'); await v3('/api/story');
+  assert.equal((await v1('/api/story/control', { action: 'next' })).status, 401, 'управлять может только админ');
+  assert.equal((await v1('/api/story/vote', { choice: 0 })).status, 409, 'до старта голосовать нельзя');
+  await admin('/api/story/control', { action: 'next' });
+  let sv = (await v1('/api/story')).body;
+  assert.equal(sv.phase, 'voting'); assert.equal(sv.choices.length, 3);
+  assert.equal(sv.counts, undefined, 'зрители не видят счёт до закрытия');
+  await v1('/api/story/vote', { choice: 2 }); await v1('/api/story/vote', { choice: 0 }); // передумал
+  await v2('/api/story/vote', { choice: 0 }); await v3('/api/story/vote', { choice: 2 });
+  assert.equal((await v1('/api/story/vote', { choice: 9 })).status, 400);
+  assert.deepEqual((await admin('/api/story')).body.counts, [2, 0, 1]);
+  await admin('/api/story/control', { action: 'next' });
+  sv = (await v1('/api/story')).body;
+  assert.equal(sv.phase, 'result'); assert.equal(sv.pick, 0); assert.equal(sv.debt, 120000);
+  await admin('/api/story/control', { action: 'next' });
+  sv = (await v1('/api/story')).body;
+  assert.equal(sv.scene, 1); assert.equal(sv.my, null, 'голоса обнуляются на новом вопросе');
+  await admin('/api/story/control', { action: 'next' }); // никто не голосовал: при равенстве берётся самый дорогой
+  assert.equal((await v1('/api/story')).body.debt, 145000);
+  for (let i = 0; i < 20; i++) await admin('/api/story/control', { action: 'next' });
+  sv = (await v1('/api/story')).body;
+  assert.equal(sv.phase, 'final'); assert.equal(sv.picks.length, 5); assert.equal(sv.debt, 120000 + 25000 + 30000 + 100000 + 300000);
+  await admin('/api/story/control', { action: 'reset' });
+  assert.equal((await v1('/api/story')).body.debt, 0);
+
   // --- конец игры ---
   await admin('/api/admin/puzzle', { num: 3, title: 'Тайна 3', body: 'x', opens_at: t - 1000, answers: ['да'], hints: [], published: true });
   await admin('/api/admin/settings', { ends_at: Date.now() - 1 });
