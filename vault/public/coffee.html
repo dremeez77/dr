@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бесплатный кофе</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }
+  .box { max-width: 460px; padding: 24px 20px; }
+  .step { font: 700 13px/1 var(--mono); letter-spacing: .18em; color: var(--muted); }
+  h1 { font-size: clamp(28px, 8vw, 40px); line-height: 1.12; margin: 14px 0; text-wrap: balance; }
+  .num { font: 800 64px/1 var(--mono); color: var(--red); margin: 18px 0 6px; }
+  ul { text-align: left; color: var(--muted); padding-left: 20px; }
+  li { margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="box" id="box">
+  <div class="step">ПОДОЖДИ СЕКУНДУ…</div>
+  <h1>Оформляем твой бесплатный кофе</h1>
+  <div class="wait" style="justify-content:center"><span class="spin"></span>Проверяем…</div>
+</div>
+<script>
+'use strict';
+// Страница ничего не собирает: сервер только увеличивает общий счётчик переходов.
+fetch('/api/trap/hit', { method: 'POST' }).then(r => r.json()).catch(() => ({ count: '?' })).then(j => setTimeout(() => {
+  document.getElementById('box').innerHTML = `
+    <div class="step red">КОФЕ НЕ БУДЕТ</div>
+    <h1>Ты только что перешёл по ссылке мошенника</h1>
+    <p class="muted">Это была проверка. Мы ничего не сохранили. Настоящая такая страница попросила бы номер карты «для подтверждения».</p>
+    <div class="num">${j.count}</div>
+    <p>столько человек в этом зале уже попались</p>
+    <ul>
+      <li>Незнакомый QR-код — это ссылка, которую ты не видишь. Сначала посмотри адрес.</li>
+      <li>«Бесплатно» и «только первым 50» — два главных крючка мошенников.</li>
+      <li>Подними глаза на экран: сейчас там твой результат.</li>
+    </ul>`;
+}, 1400));
+</script>
+</body>
+</html>

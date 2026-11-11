@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сцена: QR-ловушка</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow: hidden; cursor: none; }
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 4vh 5vw; }
+  /* Экран-приманка: нарочно «рекламный» */
+  #bait { background: #fff7e8; color: #3a2410; }
+  #bait .tag { font: 800 2.2vw/1 inherit; letter-spacing: .12em; background: #d9480f; color: #fff; padding: 1.2vh 2vw; border-radius: 999px; }
+  #bait h1 { font-size: 6.4vw; line-height: 1.02; margin: 3vh 0 1.5vh; }
+  #bait p { font-size: 2.4vw; margin: 0 0 3vh; color: #6b4a2b; }
+  #qr { background: #fff; padding: 1.6vh; border-radius: 2vh; box-shadow: 0 2vh 6vh -2vh rgba(0,0,0,.35); }
+  #qr svg { display: block; width: 38vh; height: 38vh; }
+  /* Экран-разоблачение */
+  #reveal { background: #0a0c0f; color: #e9edf1; display: none; }
+  #reveal .lbl { font: 700 2vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .2em; color: #ff5d5d; }
+  #count { font: 800 30vh/1 ui-monospace, Menlo, Consolas, monospace; color: #ff5d5d; font-variant-numeric: tabular-nums; margin: 2vh 0; }
+  #reveal h2 { font-size: 4vw; line-height: 1.1; margin: 0; max-width: 80vw; }
+  #reveal p { font-size: 2vw; color: #8793a1; margin-top: 3vh; }
+  .help { position: fixed; left: 1vw; bottom: 1vh; font: 12px/1 ui-monospace, monospace; color: rgba(128,128,128,.55); }
+</style>
+</head>
+<body>
+<div class="screen" id="bait">
+  <span class="tag">ТОЛЬКО ПЕРВЫМ 50</span>
+  <h1>Бесплатный кофе</h1>
+  <p>Сканируй код и забери напиток в буфете после лекции</p>
+  <div id="qr"></div>
+</div>
+<div class="screen" id="reveal">
+  <div class="lbl">ЗА ЭТУ МИНУТУ</div>
+  <div id="count">0</div>
+  <h2>человек из этого зала отдали бы данные карты мошеннику</h2>
+  <p>Кофе не будет. Это была проверка.</p>
+</div>
+<div class="help">ПРОБЕЛ: разоблачение · B: назад к QR · F: полный экран</div>
+<script src="/vendor/qrcode.js"></script>
+<script>
+'use strict';
+const qr = qrcode(0, 'M'); qr.addData(location.origin + '/coffee'); qr.make();
+document.getElementById('qr').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+let shown = 0, target = 0, revealed = false;
+async function poll() { try { target = (await (await fetch('/api/trap')).json()).count; } catch {} }
+setInterval(poll, 1500); poll();
+// Счётчик «докручивается» до реального значения, чтобы на экране было движение.
+setInterval(() => { if (revealed && shown < target) { shown += Math.max(1, Math.ceil((target - shown) / 12)); document.getElementById('count').textContent = shown; } }, 60);
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') { revealed = true; shown = 0; document.getElementById('count').textContent = 0; document.getElementById('bait').style.display = 'none'; document.getElementById('reveal').style.display = 'flex'; }
+  if (e.code === 'KeyB') { revealed = false; document.getElementById('bait').style.display = 'flex'; document.getElementById('reveal').style.display = 'none'; }
+  if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+});
+</script>
+</body>
+</html>

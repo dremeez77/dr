@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Хранилище — админка</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 20px; }
+  .tabs button.on { background: var(--gold); color: #111; border-color: var(--gold); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 12px; }
+  textarea { min-height: 220px; font: 14px/1.5 var(--mono); resize: vertical; }
+  .hrow { display: grid; grid-template-columns: 1fr 90px; gap: 8px; margin-bottom: 8px; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  .note { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+  .ok { color: var(--green); font-size: 14px; }
+  .chk { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--text); font-size: 15px; }
+  .chk input { width: auto; }
+  .preview { margin-top: 12px; padding: 16px; border: 1px dashed var(--line); border-radius: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="logo" href="/"><i></i>ХРАНИЛИЩЕ · АДМИН</a></header>
+  <main id="view"></main>
+</div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let D = null, tab = 'puzzles', editing = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || 'Ошибка'); e.status = r.status; throw e; }
+  return j;
+}
+// Время в полях вводится по часам этого компьютера.
+const toLocal = ts => { if (!ts) return ''; const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+const fromLocal = v => v ? new Date(v).getTime() : 0;
+const when = ts => ts ? new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+
+async function load() {
+  try { D = await api('/api/admin/overview'); render(); }
+  catch (e) { if (e.status === 401) loginForm(); else $('#view').innerHTML = `<div class="card"><p class="err">${esc(e.message)}</p></div>`; }
+}
+
+function loginForm() {
+  $('#view').innerHTML = `<div class="card" style="max-width:380px"><form id="f"><label for="pw">Пароль администратора</label><input id="pw" type="password" autocomplete="current-password"><div class="err" id="e"></div><button>Войти</button></form></div>`;
+  $('#f').onsubmit = async ev => { ev.preventDefault(); try { await api('/api/admin/login', { password: $('#pw').value }); load(); } catch (e) { $('#e').textContent = e.message; } };
+}
+
+function render() {
+  const tabs = [['puzzles', 'Замки'], ['users', `Участники (${D.users.length})`], ['attempts', 'Попытки'], ['send', 'Рассылка'], ['settings', 'Настройки и сцена']];
+  $('#view').innerHTML = `<div class="tabs">${tabs.map(([k, t]) => `<button class="ghost small ${tab === k ? 'on' : ''}" data-tab="${k}">${t}</button>`).join('')}</div><div id="pane"></div>`;
+  document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; editing = null; render(); });
+  ({ puzzles: paneP, users: paneU, attempts: paneA, send: paneS, settings: paneSet })[tab]();
+}
+
+// ---------- Замки ----------
+function paneP() {
+  if (editing) return editP(editing);
+  $('#pane').innerHTML = `
+    <div class="tbl-scroll"><table class="tbl"><thead><tr><th>№</th><th>Название</th><th>Открытие</th><th>Баллы</th><th>Статус</th><th class="r">Решили</th><th class="r">Попыток</th><th></th></tr></thead><tbody>
+    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}</td><td>${when(p.opens_at)}</td>
+      <td class="mono">${p.max_points}→${p.min_points} за ${p.decay_minutes} мин</td>
+      <td>${!p.published ? '<span class="muted">черновик</span>' : p.opens_at <= D.now ? '<span class="green">открыт</span>' : '<span class="gold">ждёт</span>'}</td>
+      <td class="r">${p.solvers}</td><td class="r">${p.tries}</td><td><button class="ghost small" data-edit="${p.num}">Изменить</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Замков пока нет</td></tr>'}
+    </tbody></table></div>
+    <div class="bar"><button id="add">Добавить замок</button></div>
+    <p class="note">Игроки видят только опубликованные замки. До времени открытия им видны номер и таймер, но не название и не текст.</p>`;
+  document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editing = D.puzzles.find(p => p.num === Number(b.dataset.edit)); paneP(); });
+  $('#add').onclick = () => { const n = Math.max(0, ...D.puzzles.map(p => p.num)) + 1; editing = { num: n, title: '', body: '', opens_at: 0, max_points: 100, min_points: 30, decay_minutes: 720, answers: [], hints: [], published: 0, isNew: true }; paneP(); };
+}
+
+function editP(p) {
+  $('#pane').innerHTML = `<div class="card">
+    <div class="grid">
+      <div><label>Номер</label><input id="num" type="number" min="1" value="${p.num}" ${p.isNew ? '' : 'disabled'}></div>
+      <div style="grid-column: span 2"><label>Название (видно после открытия)</label><input id="title" value="${esc(p.title)}"></div>
+      <div><label>Открывается</label><input id="opens" type="datetime-local" value="${toLocal(p.opens_at)}"></div>
+    </div>
+    <div class="grid">
+      <div><label>Баллов в начале</label><input id="max" type="number" value="${p.max_points}"></div>
+      <div><label>Баллов в конце</label><input id="min" type="number" value="${p.min_points}"></div>
+      <div><label>За сколько минут цена падает до минимума</label><input id="decay" type="number" value="${p.decay_minutes}"></div>
+    </div>
+    <label>Текст загадки (HTML: &lt;p&gt;, &lt;b&gt;, &lt;pre&gt;, &lt;img&gt;, &lt;blockquote&gt;)</label>
+    <textarea id="body">${esc(p.body)}</textarea>
+    <div class="bar"><input type="file" id="file" style="max-width:300px"><button class="ghost small" id="up">Загрузить и вставить</button><button class="ghost small" id="prev">Предпросмотр</button><span class="ok" id="upmsg"></span></div>
+    <div class="preview body hidden" id="preview"></div>
+    <label>Правильные ответы — по одному в строке. Регистр, пробелы, знаки и ё/е не важны</label>
+    <textarea id="answers" style="min-height:80px">${esc(p.answers.join('\n'))}</textarea>
+    <label>Подсказки: текст и цена в баллах. Открываются по порядку</label>
+    <div id="hintsBox"></div><button class="ghost small" id="addHint">+ подсказка</button>
+    <label class="chk"><input type="checkbox" id="pub" ${p.published ? 'checked' : ''}> Опубликован (появится у игроков по таймеру)</label>
+    <div class="err" id="perr"></div>
+    <div class="bar"><button id="save">Сохранить</button><button class="ghost" id="cancel">Назад</button>${p.isNew ? '' : '<button class="ghost" id="del" style="margin-left:auto;color:var(--red)">Удалить замок</button>'}</div>
+  </div>`;
+  const hintRow = h => { const d = document.createElement('div'); d.className = 'hrow'; d.innerHTML = `<input placeholder="Текст подсказки" value="${esc(h.text || '')}"><input type="number" placeholder="Цена" value="${h.cost == null ? 15 : h.cost}">`; $('#hintsBox').appendChild(d); };
+  p.hints.forEach(hintRow);
+  $('#addHint').onclick = () => hintRow({});
+  $('#cancel').onclick = () => { editing = null; load(); };
+  $('#prev').onclick = () => { const el = $('#preview'); el.classList.toggle('hidden'); el.innerHTML = $('#body').value; };
+  $('#up').onclick = () => {
+    const f = $('#file').files[0]; if (!f) { $('#upmsg').textContent = 'Сначала выбери файл'; return; }
+    const rd = new FileReader();
+    rd.onload = async () => {
+      try {
+        const r = await api('/api/admin/upload', { name: f.name, data: String(rd.result).split(',')[1] });
+        const tag = /\.(mp3|wav|ogg)$/i.test(r.url) ? `<audio controls src="${r.url}"></audio>` : /\.mp4$/i.test(r.url) ? `<video controls src="${r.url}"></video>` : /\.pdf$/i.test(r.url) ? `<a href="${r.url}" target="_blank">Открыть файл</a>` : `<img src="${r.url}" alt="">`;
+        $('#body').value += `\n<p>${tag}</p>`; $('#upmsg').textContent = 'Вставлено в конец текста';
+      } catch (e) { $('#upmsg').textContent = e.message; }
+    };
+    rd.readAsDataURL(f);
+  };
+  $('#save').onclick = async () => {
+    try {
+      await api('/api/admin/puzzle', {
+        num: Number($('#num').value), title: $('#title').value, body: $('#body').value, opens_at: fromLocal($('#opens').value),
+        max_points: Number($('#max').value), min_points: Number($('#min').value), decay_minutes: Number($('#decay').value),
+        answers: $('#answers').value.split('\n'), published: $('#pub').checked,
+        hints: [...document.querySelectorAll('.hrow')].map(r => ({ text: r.children[0].value, cost: Number(r.children[1].value) })),
+      });
+      editing = null; load();
+    } catch (e) { $('#perr').textContent = e.message; }
+  };
+  const del = $('#del');
+  if (del) del.onclick = async () => { if (!confirm(`Удалить замок №${p.num} вместе со всеми попытками и баллами за него? Это нельзя отменить.`)) return; await api(`/api/admin/puzzle/${p.num}/delete`, {}); editing = null; load(); };
+}
+
+// ---------- Участники ----------
+function paneU() {
+  $('#pane').innerHTML = `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Ник</th><th>Группа</th><th>Вход</th><th>Имя в мессенджере</th><th class="r">Баллы</th><th></th></tr></thead><tbody>
+    ${D.users.map(u => `<tr><td>${esc(u.nick || '—')}</td><td>${esc(u.group_name || '')}</td><td class="mono">${esc(u.provider)}:${esc(u.provider_id)}</td><td>${esc(u.display_name)}</td><td class="r">${u.total}</td>
+      <td><button class="ghost small" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Вернуть' : 'Заблокировать'}</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Пока никого</td></tr>'}
+    </tbody></table></div><p class="note">Заблокированный игрок пропадает из таблицы лидеров и не может отвечать. Его баллы сохраняются, блокировку можно снять.</p>`;
+  document.querySelectorAll('[data-ban]').forEach(b => b.onclick = async () => { await api('/api/admin/ban', { id: Number(b.dataset.ban), banned: b.dataset.v === '1' }); load(); });
+}
+
+// ---------- Попытки ----------
+async function paneA() {
+  $('#pane').innerHTML = '<p class="muted">Загрузка…</p>';
+  const { rows } = await api('/api/admin/attempts');
+  $('#pane').innerHTML = `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Время</th><th>Замок</th><th>Игрок</th><th>Ответ</th><th></th></tr></thead><tbody>
+    ${rows.map(a => `<tr><td class="mono">${when(a.created_at)}</td><td>№${a.num}</td><td>${esc(a.nick)} <span class="grp">${esc(a.group_name)}</span></td><td class="mono">${esc(a.answer)}</td><td>${a.correct ? '<span class="green">верно</span>' : '<span class="red">нет</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Попыток пока нет</td></tr>'}
+    </tbody></table></div><p class="note">Последние 300 попыток. Удобно смотреть, где игроки застревают и не пора ли дать подсказку рассылкой.</p>`;
+}
+
+// ---------- Рассылка ----------
+function paneS() {
+  $('#pane').innerHTML = `<div class="card"><p style="margin-top:0">Сообщение придёт всем участникам в тот мессенджер, через который они вошли. Telegram: ${D.bots.tg ? '<span class="green">подключён</span>' : '<span class="red">не подключён</span>'}, ВКонтакте: ${D.bots.vk ? '<span class="green">подключён</span>' : '<span class="red">не подключён</span>'}.</p>
+    <textarea id="txt" style="min-height:120px;font-family:var(--sans)" placeholder="Текст сообщения"></textarea>
+    <div class="bar"><button id="go">Отправить всем</button><span class="ok" id="res"></span></div>
+    <p class="note">Оповещения «замок откроется через 15 минут» и «замок открыт» уходят автоматически, отдельно их слать не нужно.</p></div>`;
+  $('#go').onclick = async () => {
+    const text = $('#txt').value.trim(); if (!text || !confirm('Отправить это сообщение всем участникам?')) return;
+    try { const r = await api('/api/admin/broadcast', { text }); $('#res').textContent = `Отправляется: ${r.queued} получателей`; } catch (e) { $('#res').textContent = e.message; }
+  };
+}
+
+// ---------- Настройки ----------
+function paneSet() {
+  $('#pane').innerHTML = `
+    <div class="card"><b>Конец игры</b><p class="note">После этого момента ответы не принимаются, а таблица замирает. Пустое поле — без ограничения.</p>
+      <div class="bar"><input id="ends" type="datetime-local" value="${toLocal(D.ends_at)}" style="max-width:260px"><button id="saveEnds">Сохранить</button><span class="ok" id="eok"></span></div></div>
+    <div class="card"><b>Экраны для сцены</b>
+      <p class="note">Открывай на компьютере, подключённом к экрану в зале. Клавиша F — полный экран.</p>
+      <p><a href="/stage/hack" target="_blank">/stage/hack</a> — «взлом» презентации. Пробел запускает помехи и сообщение Хранителя, R — сброс.<br>
+         <a href="/stage/trap" target="_blank">/stage/trap</a> — QR «бесплатный кофе». Пробел показывает счётчик попавшихся, B — назад.<br>
+         <a href="/board" target="_blank">/board</a> — таблица лидеров на большой экран.</p>
+      <div class="bar"><span>Счётчик ловушки: <b class="mono">${D.trap_count}</b></span><button class="ghost small" id="resetTrap">Обнулить перед выступлением</button></div></div>`;
+  $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
+  $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Хранилище — таблица лидеров</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  .wrap { max-width: 1500px; padding: 3vh 3vw; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 3vh; }
+  .head h1 { font: 800 clamp(28px, 4.2vw, 64px)/1 var(--mono); letter-spacing: .2em; margin: 0; }
+  .status { text-align: right; }
+  .status .lbl { font: 600 clamp(11px, 1vw, 15px)/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .status .cd { font: 700 clamp(26px, 3.6vw, 56px)/1.1 var(--mono); color: var(--gold); font-variant-numeric: tabular-nums; }
+  .tbl th { font-size: clamp(11px, 1vw, 15px); }
+  .tbl td { font-size: clamp(16px, 1.9vw, 30px); padding: clamp(8px, 1.1vh, 16px) clamp(10px, 1.4vw, 22px); }
+  .tbl .grp { font-size: .6em; display: inline; margin-left: .6em; }
+  .tbl tr:nth-child(1) td { background: rgba(245,197,66,.1); }
+  .empty { font-size: clamp(18px, 2.4vw, 34px); color: var(--muted); text-align: center; padding: 12vh 0; }
+  .foot { margin-top: 2vh; display: flex; justify-content: space-between; color: var(--muted); font: 500 clamp(12px, 1.1vw, 18px)/1.3 var(--mono); gap: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>ХРАНИЛИЩЕ</h1>
+    <div class="status"><div class="lbl" id="lbl"></div><div class="cd" id="cd"></div></div>
+  </div>
+  <div id="table"></div>
+  <div class="foot"><span id="players"></span><span id="url"></span></div>
+</div>
+<script>
+'use strict';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rowsMax = Number(new URLSearchParams(location.search).get('n')) || 12;
+let S = null, offset = 0;
+const now = () => Date.now() + offset;
+function left(ms) {
+  if (ms <= 0) return '00:00:00';
+  const s = Math.floor(ms / 1000), p = n => String(n).padStart(2, '0'), d = Math.floor(s / 86400);
+  return (d ? d + ' д ' : '') + `${p(Math.floor(s % 86400 / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
+}
+async function load() {
+  try {
+    const [s, b] = await Promise.all([fetch('/api/state').then(r => r.json()), fetch('/api/leaderboard').then(r => r.json())]);
+    S = s; offset = s.now - Date.now();
+    const nums = s.puzzles.map(p => p.num);
+    document.getElementById('table').innerHTML = b.rows.length
+      ? `<table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}<th class="r">Итого</th></tr></thead><tbody>${
+          b.rows.slice(0, rowsMax).map(r => `<tr><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td><td class="nick">${esc(r.nick)} <span class="grp">${esc(r.group)}</span></td>${
+            nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}<td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b>${r.total}</b></td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">Пока ни один замок не открыт. Кто будет первым?</div>';
+    document.getElementById('players').textContent = 'Участников: ' + b.players;
+    document.getElementById('url').textContent = location.host;
+  } catch { /* повторим */ }
+  tick();
+}
+function tick() {
+  if (!S) return;
+  const lbl = document.getElementById('lbl'), cd = document.getElementById('cd');
+  const next = S.puzzles.find(p => p.opens_at > now());
+  if (S.ends_at && now() >= S.ends_at) { lbl.textContent = 'Игра завершена'; cd.textContent = 'ИТОГИ'; }
+  else if (next) { lbl.textContent = `Замок №${next.num} откроется через`; cd.textContent = left(next.opens_at - now()); }
+  else if (S.ends_at) { lbl.textContent = 'До конца игры'; cd.textContent = left(S.ends_at - now()); }
+  else { lbl.textContent = 'Все замки открыты'; cd.textContent = ''; }
+}
+load(); setInterval(load, 10000); setInterval(tick, 1000);
+</script>
+</body>
+</html>
