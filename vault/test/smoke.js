@@ -142,6 +142,26 @@ function client(base) {
   await admin('/api/story/control', { action: 'reset' });
   assert.equal((await v1('/api/story')).body.debt, 0);
 
+  // --- разминка, зачёт групп и преподаватели ---
+  await admin('/api/admin/puzzle', { num: 11, kind: 'warmup', title: 'Разминка', body: 'x', opens_at: t - 1000, max_points: 10, min_points: 3, answers: ['292'], hints: [], published: true });
+  const w = await a('/api/puzzle/11/answer', { answer: '292' });
+  assert.equal(w.body.points, 10, 'разминка стоит ровно 10 без бонусов');
+  await admin('/api/admin/ban', { id: bobId, banned: false });
+  const tc = client(base); await tc('/api/auth/dev', { name: 'teacher' });
+  await tc('/api/profile', { nick: 'Иванова', group: 'Финансы', staff: true });
+  await admin('/api/admin/puzzle', { num: 5, title: 'Пятый', body: 'x', opens_at: t - 1000, max_points: 100, min_points: 100, decay_minutes: 60, answers: ['да'], hints: [], published: true });
+  assert.equal((await tc('/api/puzzle/5/answer', { answer: 'да' })).body.place, 1);
+  assert.equal((await b('/api/puzzle/5/answer', { answer: 'да' })).body.place, 1, 'преподаватель не занимает место студента');
+  lb = (await anon('/api/leaderboard')).body;
+  assert.ok(!lb.rows.some(x => x.nick === 'Иванова'), 'преподаватель не в студенческой таблице');
+  assert.equal(lb.staff[0].nick, 'Иванова');
+  assert.equal(lb.rows.find(x => x.nick === 'Алиса').warm, 10);
+  assert.deepEqual(lb.groups.map(g => g.name).sort(), ['Преподаватели', 'Ф-21', 'Ф-22']);
+  assert.equal((await anon('/api/admin/final')).status, 401);
+  await admin('/api/admin/settings', { final_question: 'Сколько?', final_answer: '4821' });
+  const fin = (await admin('/api/admin/final')).body;
+  assert.equal(fin.answer, '4821'); assert.ok(fin.top.length >= 2);
+
   // --- конец игры ---
   await admin('/api/admin/puzzle', { num: 3, title: 'Тайна 3', body: 'x', opens_at: t - 1000, answers: ['да'], hints: [], published: true });
   await admin('/api/admin/settings', { ends_at: Date.now() - 1 });

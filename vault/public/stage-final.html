@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сцена: суперфинал</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { background: #0a0c0f; color: #e9edf1; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow: hidden; cursor: none; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  #s { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 5vh 6vw; box-sizing: border-box; }
+  .lbl { font: 700 1.7vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .28em; color: #8793a1; }
+  h1 { font-size: 9vw; line-height: 1; margin: 2vh 0; letter-spacing: -.02em; }
+  .gold { color: #f5c542; }
+  .row { display: flex; align-items: baseline; gap: 2.5vw; width: 76vw; padding: 2.2vh 2.5vw; margin-top: 2vh; border: .15vw solid #262e38; border-radius: 1.4vw; background: #12161b; font-size: 3.6vw; opacity: 0; transform: translateY(2vh); transition: all .7s; text-align: left; }
+  .row.on { opacity: 1; transform: none; }
+  .row .pl { font: 800 3.6vw/1 ui-monospace, Menlo, Consolas, monospace; color: #8793a1; width: 5vw; }
+  .row .gr { font-size: 1.8vw; color: #8793a1; }
+  .row .pt { margin-left: auto; font: 800 3.6vw/1 ui-monospace, Menlo, Consolas, monospace; }
+  .row.first { border-color: #f5c542; } .row.first .pl, .row.first .pt { color: #f5c542; }
+  #q { font-size: 3.2vw; line-height: 1.3; max-width: 82vw; }
+  #q img { max-height: 42vh; max-width: 80vw; }
+  #timer { font: 800 12vw/1 ui-monospace, Menlo, Consolas, monospace; color: #f5c542; margin-top: 3vh; font-variant-numeric: tabular-nums; }
+  #timer.low { color: #ff5d5d; }
+  .code { font: 800 16vw/1 ui-monospace, Menlo, Consolas, monospace; color: #3ddc84; letter-spacing: .12em; }
+  .help { position: fixed; left: 1vw; bottom: 1vh; font: 11px/1 ui-monospace, monospace; color: rgba(128,128,128,.45); }
+</style>
+</head>
+<body>
+<div id="s"></div>
+<div class="help">ПРОБЕЛ или кликер: дальше · ←: назад · F: полный экран</div>
+<script>
+'use strict';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const SECONDS = Number(new URLSearchParams(location.search).get('t')) || 180;
+let D = null, step = 0, ends = 0, tick = null;
+const s = document.getElementById('s');
+
+// Шаги: 0 заставка · 1–3 тройка лидеров с третьего места · 4 вопрос и таймер · 5 код · 6 разоблачение
+function render() {
+  clearInterval(tick);
+  if (!D) { s.innerHTML = '<div class="lbl">НУЖЕН ВХОД В /admin В ЭТОМ БРАУЗЕРЕ</div>'; return; }
+  if (step === 0) s.innerHTML = '<div class="lbl">ХРАНИЛИЩЕ · 27.11</div><h1>Супер<span class="gold">финал</span></h1><div class="lbl">ТРОЕ. ОДИН ЗАМОК. ТРИ МИНУТЫ.</div>';
+  else if (step <= 3) {
+    const top = D.top, shown = step; // сначала третье место, потом второе, потом первое
+    s.innerHTML = '<div class="lbl">ФИНАЛИСТЫ</div>' + top.map((r, i) =>
+      `<div class="row ${i === 0 ? 'first' : ''} ${top.length - i <= shown ? 'on' : ''}"><span class="pl">${i + 1}</span><span>${esc(r.nick)} <span class="gr">${esc(r.group_name)}</span></span><span class="pt">${r.total}</span></div>`).join('');
+  }
+  else if (step === 4) {
+    s.innerHTML = `<div class="lbl">ПОСЛЕДНИЙ ЗАМОК</div><div id="q">${D.question || 'Вопрос не задан. Впиши его в админке: Настройки и сцена.'}</div><div id="timer"></div>`;
+    ends = Date.now() + SECONDS * 1000;
+    const upd = () => { const l = Math.max(0, Math.ceil((ends - Date.now()) / 1000)), t = document.getElementById('timer'); if (!t) return;
+      t.textContent = Math.floor(l / 60) + ':' + String(l % 60).padStart(2, '0'); t.className = l <= 30 ? 'low' : ''; };
+    upd(); tick = setInterval(upd, 200);
+  }
+  else if (step === 5) s.innerHTML = `<div class="lbl">КОД ОТ ХРАНИЛИЩА</div><div class="code">${esc(D.answer || '—')}</div>`;
+  else s.innerHTML = '<div class="lbl">КТО ТАКОЙ ХРАНИТЕЛЬ</div><h1>Хранитель —<br><span class="gold">это мы.</span></h1><div class="lbl">СПАСИБО, ЧТО ДУМАЛИ САМИ</div>';
+}
+async function load() { try { const r = await fetch('/api/admin/final'); D = r.ok ? await r.json() : null; } catch { D = null; } render(); }
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'PageDown' || e.code === 'Enter') { e.preventDefault(); if (step < 6) { step++; render(); } }
+  if (e.code === 'ArrowLeft' || e.code === 'PageUp') { if (step > 0) { step--; render(); } }
+  if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+});
+load();
+</script>
+</body>
+</html>

@@ -65,12 +65,13 @@ function paneP() {
   if (editing) return editP(editing);
   $('#pane').innerHTML = `
     <div class="tbl-scroll"><table class="tbl"><thead><tr><th>№</th><th>Название</th><th>Открытие</th><th>Баллы</th><th>Статус</th><th class="r">Решили</th><th class="r">Попыток</th><th></th></tr></thead><tbody>
-    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}</td><td>${when(p.opens_at)}</td>
+    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : ''}</td><td>${when(p.opens_at)}</td>
       <td class="mono">${p.max_points}→${p.min_points} за ${p.decay_minutes} мин</td>
       <td>${!p.published ? '<span class="muted">черновик</span>' : p.opens_at <= D.now ? '<span class="green">открыт</span>' : '<span class="gold">ждёт</span>'}</td>
       <td class="r">${p.solvers}</td><td class="r">${p.tries}</td><td><button class="ghost small" data-edit="${p.num}">Изменить</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Замков пока нет</td></tr>'}
     </tbody></table></div>
     <div class="bar"><button id="add">Добавить замок</button></div>
+    <p class="note">Разминка — простой вопрос с фиксированной ценой («Баллов в начале»): без бонусов за скорость и штрафов. Разминкам удобно давать номера с 11.</p>
     <p class="note">Игроки видят только опубликованные замки. До времени открытия им видны номер и таймер, но не название и не текст.</p>`;
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editing = D.puzzles.find(p => p.num === Number(b.dataset.edit)); paneP(); });
   $('#add').onclick = () => { const n = Math.max(0, ...D.puzzles.map(p => p.num)) + 1; editing = { num: n, title: '', body: '', opens_at: 0, max_points: 100, min_points: 30, decay_minutes: 720, answers: [], hints: [], published: 0, isNew: true }; paneP(); };
@@ -80,6 +81,7 @@ function editP(p) {
   $('#pane').innerHTML = `<div class="card">
     <div class="grid">
       <div><label>Номер</label><input id="num" type="number" min="1" value="${p.num}" ${p.isNew ? '' : 'disabled'}></div>
+      <div><label>Тип</label><select id="kind"><option value="lock">Замок</option><option value="warmup" ${p.kind === 'warmup' ? 'selected' : ''}>Разминка</option></select></div>
       <div style="grid-column: span 2"><label>Название (видно после открытия)</label><input id="title" value="${esc(p.title)}"></div>
       <div><label>Открывается</label><input id="opens" type="datetime-local" value="${toLocal(p.opens_at)}"></div>
     </div>
@@ -120,7 +122,7 @@ function editP(p) {
   $('#save').onclick = async () => {
     try {
       await api('/api/admin/puzzle', {
-        num: Number($('#num').value), title: $('#title').value, body: $('#body').value, opens_at: fromLocal($('#opens').value),
+        num: Number($('#num').value), kind: $('#kind').value, title: $('#title').value, body: $('#body').value, opens_at: fromLocal($('#opens').value),
         max_points: Number($('#max').value), min_points: Number($('#min').value), decay_minutes: Number($('#decay').value),
         answers: $('#answers').value.split('\n'), published: $('#pub').checked,
         hints: [...document.querySelectorAll('.hrow')].map(r => ({ text: r.children[0].value, cost: Number(r.children[1].value) })),
@@ -135,7 +137,7 @@ function editP(p) {
 // ---------- Участники ----------
 function paneU() {
   $('#pane').innerHTML = `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Ник</th><th>Группа</th><th>Вход</th><th>Имя в мессенджере</th><th class="r">Баллы</th><th></th></tr></thead><tbody>
-    ${D.users.map(u => `<tr><td>${esc(u.nick || '—')}</td><td>${esc(u.group_name || '')}</td><td class="mono">${esc(u.provider)}:${esc(u.provider_id)}</td><td>${esc(u.display_name)}</td><td class="r">${u.total}</td>
+    ${D.users.map(u => `<tr><td>${esc(u.nick || '—')}</td><td>${esc(u.group_name || '')}${u.is_staff ? ' <span class="gold">· преподаватель</span>' : ''}</td><td class="mono">${esc(u.provider)}:${esc(u.provider_id)}</td><td>${esc(u.display_name)}</td><td class="r">${u.total}</td>
       <td><button class="ghost small" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Вернуть' : 'Заблокировать'}</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Пока никого</td></tr>'}
     </tbody></table></div><p class="note">Заблокированный игрок пропадает из таблицы лидеров и не может отвечать. Его баллы сохраняются, блокировку можно снять.</p>`;
   document.querySelectorAll('[data-ban]').forEach(b => b.onclick = async () => { await api('/api/admin/ban', { id: Number(b.dataset.ban), banned: b.dataset.v === '1' }); load(); });
@@ -172,7 +174,13 @@ function paneSet() {
       <p><a href="/stage/hack" target="_blank">/stage/hack</a> — «взлом» презентации. Пробел запускает помехи и сообщение Хранителя, R — сброс.<br>
          <a href="/stage/trap" target="_blank">/stage/trap</a> — QR «бесплатный кофе». Пробел показывает счётчик попавшихся, B — назад.<br>
          <a href="/board" target="_blank">/board</a> — таблица лидеров на большой экран.</p>
+      <p><a href="/stage/story" target="_blank">/stage/story</a> — история с голосованием зала.<br><a href="/stage/final" target="_blank">/stage/final</a> — суперфинал в пятницу: тройка лидеров, вопрос, таймер.</p>
       <div class="bar"><span>Счётчик ловушки: <b class="mono">${D.trap_count}</b></span><button class="ghost small" id="resetTrap">Обнулить перед выступлением</button></div></div>`;
+  $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Суперфинал</b><p class="note">Вопрос для тройки лидеров и ответ на него — код от замка на кейсе. Видны только на экране /stage/final.</p>
+      <label>Вопрос (HTML)</label><textarea id="fq" style="min-height:110px">${esc(D.final_question)}</textarea>
+      <label>Ответ (код от кейса)</label><input id="fa" value="${esc(D.final_answer)}" style="max-width:260px">
+      <div class="bar"><button id="saveFinal">Сохранить</button><span class="ok" id="fok"></span></div></div>`);
+  $('#saveFinal').onclick = async () => { await api('/api/admin/settings', { final_question: $('#fq').value, final_answer: $('#fa').value }); $('#fok').textContent = 'Сохранено'; };
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
 }

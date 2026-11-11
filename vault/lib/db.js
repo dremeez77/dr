@@ -75,6 +75,10 @@ function openDb(dataDir) {
     );
     CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
   `);
+  // Тип загадки добавлен позже: lock — замок, warmup — простая разминка дня.
+  try { db.exec("ALTER TABLE puzzles ADD COLUMN kind TEXT NOT NULL DEFAULT 'lock'"); } catch { /* колонка уже есть */ }
+  // Преподаватели и сотрудники играют в отдельном зачёте и не претендуют на приз студентов.
+  try { db.exec('ALTER TABLE users ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0'); } catch { /* колонка уже есть */ }
   return db;
 }
 

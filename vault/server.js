@@ -59,6 +59,13 @@ function bindCode(code, provider, providerId, name) {
   return r.changes > 0;
 }
 const bots = new Bots(cfg, bindCode);
+// Хранитель пишет всем игрокам от первого лица, когда в игре что-то происходит.
+const pickOne = a => a[Math.floor(Math.random() * a.length)];
+function keeper(text) {
+  const users = q("SELECT provider, provider_id FROM users WHERE banned=0 AND provider IN ('tg','vk')").all();
+  bots.broadcast(users, '🗝 ' + text);
+}
+const mins = ms => { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`; };
 
 // ---------- HTTP-помощники ----------
 class HttpError extends Error { constructor(code, msg, extra) { super(msg); this.code = code; this.extra = extra; } }
@@ -116,7 +123,7 @@ function currentUser(cookies) {
   if (!cookies.sid) return null;
   return q('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?').get(cookies.sid) || null;
 }
-const publicUser = u => u && ({ id: u.id, nick: u.nick, group: u.group_name, provider: u.provider, needs_profile: !u.nick, banned: !!u.banned });
+const publicUser = u => u && ({ id: u.id, nick: u.nick, group: u.group_name, staff: !!u.is_staff, provider: u.provider, needs_profile: !u.nick, banned: !!u.banned });
 function requirePlayer(ctx) {
   const u = ctx.user;
   if (!u) fail(401, 'Сначала войди');
@@ -162,7 +169,7 @@ route('GET', /^\/api\/state$/, ctx => {
     const open = p.opens_at <= t;
     const mine = u ? q('SELECT points, place FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) : null;
     return {
-      num: p.num, opens_at: p.opens_at, open,
+      num: p.num, kind: p.kind, opens_at: p.opens_at, open,
       title: open ? p.title : null,
       max_points: p.max_points, min_points: p.min_points, decay_minutes: p.decay_minutes,
       solvers: open ? q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0').get(p.id).c : 0,
@@ -175,17 +182,33 @@ route('GET', /^\/api\/state$/, ctx => {
 });
 
 route('GET', /^\/api\/leaderboard$/, () => {
-  const rows = q(`SELECT u.id, u.nick, u.group_name, SUM(s.points) total, MAX(s.solved_at) last
+  const all = q(`SELECT u.id, u.nick, u.group_name, u.is_staff, SUM(s.points) total, MAX(s.solved_at) last
                   FROM solves s JOIN users u ON u.id=s.user_id WHERE u.banned=0
-                  GROUP BY u.id ORDER BY total DESC, last ASC LIMIT 200`).all();
-  const per = {};
-  for (const r of q('SELECT s.user_id, p.num, s.points, s.place FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
-    (per[r.user_id] = per[r.user_id] || {})[r.num] = { points: r.points, place: r.place };
+                  GROUP BY u.id ORDER BY total DESC, last ASC`).all();
+  const rows = all.filter(r => !r.is_staff), staffRows = all.filter(r => r.is_staff);
+  const per = {}, warm = {};
+  for (const r of q('SELECT s.user_id, p.num, p.kind, s.points, s.place FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
+    if (r.kind === 'warmup') warm[r.user_id] = (warm[r.user_id] || 0) + r.points;
+    else (per[r.user_id] = per[r.user_id] || {})[r.num] = { points: r.points, place: r.place };
   }
+  // Зачёт групп: сумма баллов пяти лучших игроков. «Ф-21», «ф 21» и «Ф21» считаются одной группой.
+  const gmap = new Map();
+  for (const r of all) {
+    // Все преподаватели — одна команда, которая соревнуется с группами.
+    const key = r.is_staff ? '#STAFF' : String(r.group_name || '').toUpperCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    if (!key) continue;
+    const g = gmap.get(key) || { name: r.is_staff ? 'Преподаватели' : r.group_name, staff: !!r.is_staff, players: 0, top: [] };
+    g.players++; if (g.top.length < 5) g.top.push(r.total); // rows уже отсортированы по убыванию
+    gmap.set(key, g);
+  }
+  const groups = [...gmap.values()].map(g => ({ name: g.name, staff: g.staff, players: g.players, total: g.top.reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => b.total - a.total).slice(0, 30).map((g, i) => ({ rank: i + 1, ...g }));
   return {
     now: now(),
     players: q('SELECT COUNT(*) c FROM users WHERE nick IS NOT NULL AND banned=0').get().c,
-    rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total, locks: per[r.id] || {} })),
+    groups,
+    staff: staffRows.slice(0, 50).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total })),
+    rows: rows.slice(0, 200).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total, locks: per[r.id] || {}, warm: warm[r.id] || 0 })),
   };
 });
 
@@ -242,8 +265,9 @@ route('POST', /^\/api\/profile$/, async ctx => {
   // SQLite не умеет приводить кириллицу к нижнему регистру, поэтому ключ для сравнения считаем здесь.
   const key = nick.toLowerCase().replace(/ё/g, 'е');
   if (q('SELECT 1 FROM users WHERE nick_key=? AND id<>?').get(key, u.id)) fail(409, 'Такой ник уже занят');
-  q('UPDATE users SET nick=?, nick_key=?, group_name=? WHERE id=?').run(nick, key, group, u.id);
-  return { user: publicUser({ ...u, nick, group_name: group }) };
+  const staff = b.staff ? 1 : 0;
+  q('UPDATE users SET nick=?, nick_key=?, group_name=?, is_staff=? WHERE id=?').run(nick, key, group, staff, u.id);
+  return { user: publicUser({ ...u, nick, group_name: group, is_staff: staff }) };
 });
 
 // --- Игра ---
@@ -252,7 +276,7 @@ route('GET', /^\/api\/puzzle\/(\d+)$/, ctx => {
   const hints = parse(p.hints, []), used = hintsUsed(u.id, p.id);
   const last = q('SELECT MAX(created_at) t FROM attempts WHERE user_id=? AND puzzle_id=?').get(u.id, p.id).t || 0;
   return {
-    num: p.num, title: p.title, body: p.body, opens_at: p.opens_at,
+    num: p.num, kind: p.kind, title: p.title, body: p.body, opens_at: p.opens_at,
     max_points: p.max_points, min_points: p.min_points, decay_minutes: p.decay_minutes,
     solved: q('SELECT points, place, solved_at FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) || null,
     wrong: wrongCount(u.id, p.id),
@@ -276,11 +300,26 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
   // Всё ниже выполняется синхронно, поэтому два игрока не могут получить одно и то же место.
   q('INSERT INTO attempts(user_id,puzzle_id,answer,correct,created_at) VALUES(?,?,?,?,?)').run(u.id, p.id, raw, correct ? 1 : 0, t);
   if (!correct) return { correct: false, wrong: wrongCount(u.id, p.id), cooldown_until: t + ATTEMPT_COOLDOWN_MS };
-  const place = q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0').get(p.id).c + 1;
+  // Места студентов и преподавателей считаются отдельно: преподаватель не забирает бонус у студента.
+  const place = q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0 AND u.is_staff=?').get(p.id, u.is_staff).c + 1;
   const hints = parse(p.hints, []);
   const hintCost = hints.slice(0, hintsUsed(u.id, p.id)).reduce((s, h) => s + (Number(h.cost) || 0), 0);
-  const points = finalPoints({ timePts: timeValue(p, t - p.opens_at), place, wrong: wrongCount(u.id, p.id), hintCost });
+  // Разминка стоит одинаково для всех: без скорости, бонусов и штрафов.
+  const points = p.kind === 'warmup' ? p.max_points
+    : finalPoints({ timePts: timeValue(p, t - p.opens_at), place, wrong: wrongCount(u.id, p.id), hintCost });
   q('INSERT INTO solves(user_id,puzzle_id,solved_at,points,place) VALUES(?,?,?,?,?)').run(u.id, p.id, t, points, place);
+  if (p.kind !== 'warmup' && u.is_staff) {
+    const students = q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0 AND u.is_staff=0').get(p.id).c;
+    if (place === 1) keeper(students
+      ? `Преподаватели вступили в игру: ${u.nick} открыл замок №${p.num}.`
+      : `Замок №${p.num} открыт. И первым был не студент, а преподаватель: ${u.nick}. Студенты, вам не стыдно?`);
+  } else if (p.kind !== 'warmup') {
+    if (place === 1) keeper(pickOne([
+      `Замок №${p.num} вскрыт. Первым был ${u.nick} (${u.group_name}): ${mins(t - p.opens_at)}. Остальные, вы вообще стараетесь?`,
+      `${u.nick} из ${u.group_name} открыл замок №${p.num} за ${mins(t - p.opens_at)}. Я думал, продержусь дольше. Бонус за второе и третье место ещё свободен.`,
+    ]));
+    else if (place === 3) keeper(`Замок №${p.num}: все три бонусных места заняты. Дальше только баллы за скорость, и они тают.`);
+  }
   return { correct: true, points, place };
 });
 
@@ -392,13 +431,14 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
     now: now(), ends_at: endsAt(), base_url: cfg.baseUrl,
     bots: { tg: !!cfg.tgToken, vk: !!cfg.vkToken },
     trap_count: Number(kvGet('trap_count') || 0),
+    final_question: kvGet('final_question') || '', final_answer: kvGet('final_answer') || '',
     puzzles: q('SELECT * FROM puzzles ORDER BY num').all().map(p => ({
       ...p, answers: parse(p.answers, []), hints: parse(p.hints, []),
       solvers: q('SELECT COUNT(*) c FROM solves WHERE puzzle_id=?').get(p.id).c,
       tries: q('SELECT COUNT(*) c FROM attempts WHERE puzzle_id=?').get(p.id).c,
     })),
     users: q(`SELECT u.id, u.provider, u.provider_id, u.display_name, u.nick, u.group_name, u.banned, u.created_at,
-              COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) total
+              u.is_staff, COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) total
               FROM users u ORDER BY total DESC, u.id`).all(),
   };
 });
@@ -413,7 +453,8 @@ route('POST', /^\/api\/admin\/puzzle$/, async ctx => {
   const answers = (b.answers || []).map(a => String(a).trim()).filter(Boolean);
   if (b.published && !answers.length) fail(400, 'Нельзя публиковать замок без ответа');
   const hints = (b.hints || []).filter(h => h && String(h.text || '').trim()).map(h => ({ text: String(h.text).trim(), cost: Math.max(0, Number(h.cost) || 0) }));
-  const max = Math.max(1, Number(b.max_points) || 100), min = Math.min(max, Math.max(0, Number(b.min_points) || 0));
+  const kind = b.kind === 'warmup' ? 'warmup' : 'lock';
+  const max = Math.max(1, Number(b.max_points) || 100), min = kind === 'warmup' ? max : Math.min(max, Math.max(0, Number(b.min_points) || 0));
   const vals = [String(b.title).trim(), String(b.body || ''), opens, max, min, Math.max(1, Number(b.decay_minutes) || 720),
     JSON.stringify(answers), JSON.stringify(hints), b.published ? 1 : 0];
   const old = q('SELECT * FROM puzzles WHERE num=?').get(num);
@@ -426,6 +467,7 @@ route('POST', /^\/api\/admin\/puzzle$/, async ctx => {
     q(`INSERT INTO puzzles(title,body,opens_at,max_points,min_points,decay_minutes,answers,hints,published,num)
        VALUES(?,?,?,?,?,?,?,?,?,?)`).run(...vals, num);
   }
+  q('UPDATE puzzles SET kind=? WHERE num=?').run(kind, num);
   return { ok: true };
 });
 
@@ -470,7 +512,17 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
   const b = await ctx.body();
   if (b.ends_at !== undefined) kvSet('ends_at', Number(b.ends_at) || 0);
   if (b.reset_trap) kvSet('trap_count', 0);
+  if (b.final_question !== undefined) kvSet('final_question', String(b.final_question));
+  if (b.final_answer !== undefined) kvSet('final_answer', String(b.final_answer));
   return { ok: true };
+});
+
+// Суперфинал: вопрос и код от кейса видит только экран на сцене (вход администратора).
+route('GET', /^\/api\/admin\/final$/, ctx => {
+  requireAdmin(ctx);
+  const top = q(`SELECT u.nick, u.group_name, SUM(s.points) total, MAX(s.solved_at) last FROM solves s JOIN users u ON u.id=s.user_id
+                 WHERE u.banned=0 AND u.is_staff=0 GROUP BY u.id ORDER BY total DESC, last ASC LIMIT 3`).all();
+  return { top, question: kvGet('final_question') || '', answer: kvGet('final_answer') || '' };
 });
 
 route('POST', /^\/api\/admin\/broadcast$/, async ctx => {
@@ -487,7 +539,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html' };
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));
@@ -537,9 +589,20 @@ function notifyTick() {
   for (const p of q('SELECT * FROM puzzles WHERE published=1 AND notified_open=0 AND opens_at<=?').all(t)) {
     q('UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE id=?').run(p.id);
     // Если сервер был выключен и замок открылся давно, запоздалое сообщение не шлём.
-    if (t - p.opens_at < 30 * 60000) bots.broadcast(users(), `🔓 Замок №${p.num} открыт! Чем быстрее решишь, тем больше баллов.\n${cfg.baseUrl}/#/lock/${p.num}`);
+    if (t - p.opens_at < 30 * 60000) bots.broadcast(users(), p.kind === 'warmup'
+      ? `☕ Разминка дня открыта: ${p.max_points} баллов каждому, кто ответит верно. Спешить не нужно.\n${cfg.baseUrl}/#/lock/${p.num}`
+      : `🔓 Замок №${p.num} открыт! Чем быстрее решишь, тем больше баллов.\n${cfg.baseUrl}/#/lock/${p.num}`);
   }
-  for (const p of q('SELECT * FROM puzzles WHERE published=1 AND notified_soon=0 AND opens_at>? AND opens_at<=?').all(t, t + SOON_MS)) {
+  // Через час после открытия замка Хранитель подводит промежуточный итог.
+  for (const p of q("SELECT * FROM puzzles WHERE published=1 AND kind='lock' AND opens_at<=? AND opens_at>?").all(t - 3600000, t - 2 * 3600000)) {
+    if (kvGet('hour_' + p.id)) continue;
+    kvSet('hour_' + p.id, 1);
+    const solved = q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0').get(p.id).c;
+    const all = q('SELECT COUNT(*) c FROM users WHERE nick IS NOT NULL AND banned=0').get().c;
+    keeper(solved ? `Прошёл час. Замок №${p.num} открыли ${solved} из ${all}. Он всё ещё стоит баллов, но с каждой минутой меньше.`
+                  : `Прошёл час. Замок №${p.num} не открыл никто из ${all}. Я начинаю думать, что переоценил вас.`);
+  }
+  for (const p of q("SELECT * FROM puzzles WHERE published=1 AND kind='lock' AND notified_soon=0 AND opens_at>? AND opens_at<=?").all(t, t + SOON_MS)) {
     q('UPDATE puzzles SET notified_soon=1 WHERE id=?').run(p.id);
     bots.broadcast(users(), `⏳ Замок №${p.num} откроется через ${Math.max(1, Math.round((p.opens_at - t) / 60000))} мин. Будь готов: ${cfg.baseUrl}`);
   }

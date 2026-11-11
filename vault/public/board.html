@@ -23,7 +23,7 @@
 <body>
 <div class="wrap">
   <div class="head">
-    <h1>ХРАНИЛИЩЕ</h1>
+    <div><h1>ХРАНИЛИЩЕ</h1><div class="status" style="text-align:left;margin-top:1vh"><div class="lbl" id="sub"></div></div></div>
     <div class="status"><div class="lbl" id="lbl"></div><div class="cd" id="cd"></div></div>
   </div>
   <div id="table"></div>
@@ -33,6 +33,7 @@
 'use strict';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const rowsMax = Number(new URLSearchParams(location.search).get('n')) || 12;
+const mode = new URLSearchParams(location.search).get('view'); // ?view=players или ?view=groups закрепляет один вид
 let S = null, offset = 0;
 const now = () => Date.now() + offset;
 function left(ms) {
@@ -44,7 +45,14 @@ async function load() {
   try {
     const [s, b] = await Promise.all([fetch('/api/state').then(r => r.json()), fetch('/api/leaderboard').then(r => r.json())]);
     S = s; offset = s.now - Date.now();
-    const nums = s.puzzles.map(p => p.num);
+    const nums = s.puzzles.filter(p => p.kind !== 'warmup').map(p => p.num);
+    // Каждые 20 секунд экран переключается между личным зачётом и зачётом групп.
+    const showGroups = b.groups.length > 1 && Math.floor(Date.now() / 20000) % 2 === 1 && mode !== 'players' || mode === 'groups';
+    document.getElementById('sub').textContent = showGroups ? 'ЗАЧЁТ ГРУПП · БАЛЛЫ ПЯТИ ЛУЧШИХ' : 'ЛИЧНЫЙ ЗАЧЁТ';
+    if (showGroups) {
+      document.getElementById('table').innerHTML = `<table class="tbl"><thead><tr><th>#</th><th>Команда</th><th class="r">Игроков</th><th class="r">Баллы</th></tr></thead><tbody>${
+        b.groups.slice(0, rowsMax).map(g => `<tr><td class="rank ${g.rank === 1 ? 'rank-1' : ''}">${g.rank}</td><td>${esc(g.name)}</td><td class="r">${g.players}</td><td class="r ${g.rank === 1 ? 'rank-1' : ''}"><b>${g.total}</b></td></tr>`).join('')}</tbody></table>`;
+    } else
     document.getElementById('table').innerHTML = b.rows.length
       ? `<table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}<th class="r">Итого</th></tr></thead><tbody>${
           b.rows.slice(0, rowsMax).map(r => `<tr><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td><td class="nick">${esc(r.nick)} <span class="grp">${esc(r.group)}</span></td>${

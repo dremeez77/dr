@@ -71,7 +71,7 @@ function renderHeader() {
 // ---------- Главная ----------
 function renderHome() {
   if (!S) return;
-  const ps = S.puzzles;
+  const ps = S.puzzles.filter(p => p.kind !== 'warmup'), warm = S.puzzles.filter(p => p.kind === 'warmup' && p.open);
   const next = ps.find(p => !p.open);
   let nextHtml;
   if (over()) nextHtml = `<div class="next"><span class="lbl">Игра завершена</span><span class="cd">Итоги ниже</span></div>`;
@@ -98,14 +98,20 @@ function renderHome() {
     </section>
     <h2>Замки</h2>
     <div class="locks">${locks || '<p class="muted">Замки появятся здесь после открытия недели.</p>'}</div>
+    ${warm.length ? `<h2>Разминка дня</h2><div class="locks">${warm.map(p => p.solved
+      ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">РАЗМИНКА · РЕШЕНО</span><span class="t">${esc(p.title)}</span><span class="big">+${p.solved.points}</span><span class="sub">ответили верно: ${p.solvers}</span></a>`
+      : `<a class="lock open" href="#/lock/${p.num}"><span class="n">РАЗМИНКА · БЕЗ СПЕШКИ</span><span class="t">${esc(p.title)}</span><span class="big">${p.max_points}</span><span class="sub">баллов каждому · ответили: ${p.solvers}</span></a>`).join('')}</div>` : ''}
     <h2>Лидеры${board ? ` · участников: ${board.players}` : ''}</h2>
     ${boardHtml(15)}
+    ${groupsHtml()}
     <h2>Правила</h2>
     <div class="rules">
       <div class="rule"><b>Скорость решает</b><span>Каждый замок сначала стоит максимум баллов, и цена падает с каждой минутой. Счётчик видно на карточке.</span></div>
       <div class="rule"><b>Бонус первым</b><span>Первый решивший получает +30 баллов, второй +20, третий +10.</span></div>
       <div class="rule"><b>Ошибки стоят баллов</b><span>За каждый неверный ответ −2 балла (не больше −20). Между попытками пауза 20 секунд.</span></div>
       <div class="rule"><b>Подсказки платные</b><span>Подсказку можно открыть в любой момент, но её цена вычтется из баллов за этот замок.</span></div>
+      <div class="rule"><b>Разминка для всех</b><span>Каждый день есть простой вопрос на 10 баллов. Скорость не важна: баллы получает каждый, кто ответил верно.</span></div>
+      <div class="rule"><b>Группа против группы</b><span>Баллы пяти лучших игроков группы идут в командный зачёт. Преподаватели играют одной командой.</span></div>
       <div class="rule"><b>Играем по одному</b><span>Один человек — один аккаунт. Приз вручается лично, поэтому передавать ответы нет смысла.</span></div>
       <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые спрятаны в колледже и в том, что звучало на открытии.</span></div>
     </div>`;
@@ -114,17 +120,30 @@ function renderHome() {
 
 function boardHtml(limit) {
   if (!board || !board.rows.length) return '<p class="muted">Пока никто не открыл ни одного замка. Стань первым.</p>';
-  const nums = S ? S.puzzles.map(p => p.num) : [];
+  const nums = S ? S.puzzles.filter(p => p.kind !== 'warmup').map(p => p.num) : [];
+  const hasWarm = S && S.puzzles.some(p => p.kind === 'warmup');
   const myId = S && S.user ? S.user.id : -1;
   let rows = board.rows.slice(0, limit);
   const mine = board.rows.find(r => r.id === myId);
   if (mine && !rows.includes(mine)) rows = rows.concat(mine);
-  return `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}<th class="r">Итого</th></tr></thead><tbody>${
+  return `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}${hasWarm ? '<th class="r" title="Разминки">Р</th>' : ''}<th class="r">Итого</th></tr></thead><tbody>${
     rows.map(r => `<tr class="${r.id === myId ? 'me-row' : ''}"><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td>
       <td class="nick">${esc(r.nick)} <span class="grp">${esc(r.group)}</span></td>
-      ${nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}
+      ${nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}${hasWarm ? `<td class="r">${r.warm || '<span class="muted">·</span>'}</td>` : ''}
       <td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b>${r.total}</b></td></tr>`).join('')
   }</tbody></table></div>`;
+}
+
+function groupsHtml() {
+  if (!board || !board.groups || !board.groups.length) return '';
+  const mine = S && S.user ? (S.user.staff ? 'Преподаватели' : S.user.group) : null;
+  const g = `<h2>Зачёт групп</h2><div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Команда</th><th class="r">Игроков</th><th class="r">Баллы топ-5</th></tr></thead><tbody>${
+    board.groups.slice(0, 10).map(x => `<tr class="${x.name === mine ? 'me-row' : ''}"><td class="rank ${x.rank === 1 ? 'rank-1' : ''}">${x.rank}</td><td>${esc(x.name)}${x.staff ? ' <span class="pill" style="font-size:11px;padding:4px 8px">команда преподавателей</span>' : ''}</td><td class="r">${x.players}</td><td class="r"><b>${x.total}</b></td></tr>`).join('')
+  }</tbody></table></div>`;
+  const st = board.staff && board.staff.length ? `<h2>Преподаватели</h2><div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Игрок</th><th class="r">Итого</th></tr></thead><tbody>${
+    board.staff.slice(0, 10).map(r => `<tr><td class="rank">${r.rank}</td><td class="nick">${esc(r.nick)} <span class="grp">${esc(r.group)}</span></td><td class="r"><b>${r.total}</b></td></tr>`).join('')
+  }</tbody></table></div>` : '';
+  return g + st;
 }
 
 // ---------- Загадка ----------
@@ -142,7 +161,7 @@ async function renderLock(num) {
   v.innerHTML = `
     <a class="back" href="#/">← Ко всем замкам</a>
     <div class="puzzle">
-      <span class="mono muted" style="font-size:12px;letter-spacing:.18em">ЗАМОК №${P.num}</span>
+      <span class="mono muted" style="font-size:12px;letter-spacing:.18em">${P.kind === 'warmup' ? 'РАЗМИНКА ДНЯ' : 'ЗАМОК №' + P.num}</span>
       <h1>${esc(P.title)}</h1>
       <div class="meta" id="meta"></div>
       <div class="body" id="body"></div>
@@ -157,7 +176,7 @@ function renderAnswer() {
   const box = $('#answerBox');
   if (P.solved) {
     box.innerHTML = `<div class="solved-box"><b class="green">Замок открыт. +${P.solved.points} ${plural(P.solved.points, 'балл', 'балла', 'баллов')}</b><br>
-      <span class="muted">Ты решил ${P.solved.place}-м. Ответ никому не рассказывай: приз один.</span></div>`;
+      <span class="muted">${P.kind === 'warmup' ? 'Разминка засчитана.' : `Ты решил ${P.solved.place}-м. Ответ никому не рассказывай: приз один.`}</span></div>`;
     return;
   }
   if (P.over) { box.innerHTML = `<div class="msg muted">Игра завершена, ответы больше не принимаются.</div>`; return; }
@@ -259,13 +278,15 @@ async function afterLogin() {
 function openProfile() {
   modal(`<h3>Кто ты?</h3><p class="muted" style="margin:0">Ник увидят все в таблице лидеров. Группа нужна, чтобы найти победителя.</p>
     <form id="pf"><label for="nick">Ник</label><input id="nick" maxlength="20" required autocomplete="nickname">
-    <label for="grp">Группа</label><input id="grp" maxlength="20" required placeholder="Например, Ф-21">
+    <label for="grp" id="grpLbl">Группа</label><input id="grp" maxlength="20" required placeholder="Например, Ф-21">
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text);font-size:15px"><input type="checkbox" id="staff" style="width:auto"> Я преподаватель или сотрудник</label>
     <div class="err" id="perr"></div><button style="width:100%">Начать игру</button></form>`);
   $('#pf').onsubmit = async e => {
     e.preventDefault();
-    try { await api('/api/profile', { nick: $('#nick').value, group: $('#grp').value }); closeModal(); await refresh(); go(); }
+    try { await api('/api/profile', { nick: $('#nick').value, group: $('#grp').value, staff: $('#staff').checked }); closeModal(); await refresh(); go(); }
     catch (err) { $('#perr').textContent = err.message; }
   };
+  $('#staff').onchange = e => { $('#grpLbl').textContent = e.target.checked ? 'Кафедра' : 'Группа'; $('#grp').placeholder = e.target.checked ? 'Например, Финансы' : 'Например, Ф-21'; };
   $('#nick').focus();
 }
 
@@ -283,6 +304,7 @@ function tick() {
   if (P && $('#meta')) {
     const wait = Math.ceil((P.cooldown_until - serverNow()) / 1000);
     $('#meta').innerHTML = P.solved ? `<span class="pill green">Решено</span>` :
+      P.kind === 'warmup' ? `<span class="pill gold">${P.max_points} баллов за верный ответ</span><span class="pill">Скорость не важна</span>` :
       `<span class="pill gold">Сейчас стоит ${valueNow(P)} ${plural(valueNow(P), 'балл', 'балла', 'баллов')}</span><span class="pill">Ошибок: ${P.wrong}</span>`;
     const btn = $('#send');
     if (btn) { btn.disabled = wait > 0; btn.textContent = wait > 0 ? `Подожди ${wait} с` : 'Проверить'; }
