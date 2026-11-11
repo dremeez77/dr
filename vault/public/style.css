@@ -1,6 +1,6 @@
 :root {
-  --bg: #0a0c0f; --panel: #12161b; --panel2: #181d24; --line: #262e38;
-  --text: #e9edf1; --muted: #8793a1; --gold: #f5c542; --green: #3ddc84; --red: #ff5d5d;
+  --bg: #040b2c; --panel: #0a1543; --panel2: #0e1c57; --line: #1d2f73;
+  --text: #e9edf1; --muted: #93a5cf; --gold: #19b5fe; /* акцентный цвет: синий в гамме партнёра недели */ --green: #3ddc84; --red: #ff5d5d;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
@@ -8,7 +8,7 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 var(--sans);
-  background-image: radial-gradient(1200px 500px at 50% -150px, rgba(245,197,66,.09), transparent 70%);
+  background-image: radial-gradient(1200px 500px at 50% -150px, rgba(25,181,254,.09), transparent 70%);
   background-repeat: no-repeat; min-height: 100vh;
 }
 a { color: var(--gold); }
@@ -37,7 +37,7 @@ button:disabled { opacity: .5; cursor: default; filter: none; }
 button.ghost, .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
 button.small { padding: 8px 12px; font-size: 13px; }
 input, textarea, select {
-  width: 100%; font: 16px/1.4 var(--sans); color: var(--text); background: #0d1014;
+  width: 100%; font: 16px/1.4 var(--sans); color: var(--text); background: #061036;
   border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
 }
 input:focus, textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
@@ -60,7 +60,7 @@ h2 { font: 700 13px/1 var(--mono); letter-spacing: .2em; text-transform: upperca
 .lock .big { font: 700 30px/1 var(--mono); font-variant-numeric: tabular-nums; margin-top: auto; }
 .lock .sub { font-size: 13px; color: var(--muted); }
 .lock.closed { opacity: .72; }
-.lock.open { border-color: rgba(245,197,66,.55); box-shadow: 0 0 0 1px rgba(245,197,66,.12), 0 12px 40px -20px rgba(245,197,66,.5); cursor: pointer; }
+.lock.open { border-color: rgba(25,181,254,.55); box-shadow: 0 0 0 1px rgba(25,181,254,.12), 0 12px 40px -20px rgba(25,181,254,.5); cursor: pointer; }
 .lock.open:hover { transform: translateY(-2px); transition: transform .15s; }
 .lock.solved { border-color: rgba(61,220,132,.5); }
 .lock.solved .big { color: var(--green); }
@@ -73,7 +73,7 @@ h2 { font: 700 13px/1 var(--mono); letter-spacing: .2em; text-transform: upperca
 .tbl tr:last-child td { border-bottom: 0; }
 .tbl td.r, .tbl th.r { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .tbl td.rank { width: 44px; font-family: var(--mono); color: var(--muted); }
-.tbl tr.me-row td { background: rgba(245,197,66,.07); }
+.tbl tr.me-row td { background: rgba(25,181,254,.07); }
 .tbl .grp { color: var(--muted); font-size: 13px; display: block; }
 .tbl .nick { min-width: 132px; overflow-wrap: anywhere; }
 .tbl-scroll { overflow-x: auto; border-radius: 16px; }
@@ -92,11 +92,11 @@ h2 { font: 700 13px/1 var(--mono); letter-spacing: .2em; text-transform: upperca
 .puzzle .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .body { font-size: 17px; line-height: 1.65; overflow-wrap: anywhere; }
 .body img, .body video { max-width: 100%; height: auto; border-radius: 10px; }
-.body pre, .body code { font-family: var(--mono); background: #0d1014; border: 1px solid var(--line); border-radius: 8px; }
+.body pre, .body code { font-family: var(--mono); background: #061036; border: 1px solid var(--line); border-radius: 8px; }
 .body pre { padding: 14px; overflow-x: auto; white-space: pre; }
 .body code { padding: 1px 6px; }
 .body pre code { border: 0; padding: 0; background: none; }
-.body blockquote { margin: 14px 0; padding: 4px 16px; border-left: 3px solid var(--gold); color: #cfd6dd; }
+.body blockquote { margin: 14px 0; padding: 4px 16px; border-left: 3px solid var(--gold); color: #d5def3; }
 .answer { margin-top: 22px; display: flex; gap: 10px; }
 .answer input { font-family: var(--mono); }
 .msg { margin-top: 12px; min-height: 24px; font-weight: 600; }
@@ -110,7 +110,7 @@ h2 { font: 700 13px/1 var(--mono); letter-spacing: .2em; text-transform: upperca
 .modal { width: 100%; max-width: 420px; background: var(--panel2); border: 1px solid var(--line); border-radius: 18px; padding: 22px; max-height: 92vh; overflow: auto; }
 .modal h3 { margin: 0 0 6px; font-size: 22px; }
 .modal .row { display: grid; gap: 10px; margin-top: 16px; }
-.code { font: 700 34px/1 var(--mono); letter-spacing: .22em; text-align: center; padding: 18px 8px; margin: 14px 0; background: #0d1014; border: 1px dashed var(--gold); border-radius: 12px; color: var(--gold); user-select: all; }
+.code { font: 700 34px/1 var(--mono); letter-spacing: .22em; text-align: center; padding: 18px 8px; margin: 14px 0; background: #061036; border: 1px dashed var(--gold); border-radius: 12px; color: var(--gold); user-select: all; }
 .wait { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; margin-top: 12px; }
 .spin { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--gold); border-radius: 50%; animation: spin 1s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }

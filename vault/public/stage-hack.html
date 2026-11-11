@@ -25,17 +25,17 @@
   @keyframes roll { to { background-position: 0 10px; } }
 
   /* Сообщение */
-  #term { display: none; flex-direction: column; background: #000; color: #f5c542; font: 600 min(2.25vw, 4vh)/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding: 6vh 6vw; box-sizing: border-box; }
+  #term { display: none; flex-direction: column; background: #000; color: #19b5fe; font: 600 min(2.25vw, 4vh)/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding: 6vh 6vw; box-sizing: border-box; }
   #term::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 2px, transparent 2px 4px); }
-  #lines div { min-height: 1.5em; text-shadow: 0 0 1.2vw rgba(245,197,66,.55); white-space: pre-wrap; }
+  #lines div { min-height: 1.5em; text-shadow: 0 0 1.2vw rgba(25,181,254,.55); white-space: pre-wrap; }
   .cur::after { content: "█"; animation: blink .8s steps(1) infinite; margin-left: .2em; }
   @keyframes blink { 50% { opacity: 0; } }
   #final { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 4vw; opacity: 0; transition: opacity 1.2s; }
   #final.on { opacity: 1; }
-  #qr { background: #f5c542; padding: 1.2vh; border-radius: 1.2vh; }
+  #qr { background: #19b5fe; padding: 1.2vh; border-radius: 1.2vh; }
   #qr svg { display: block; width: 27vh; height: 27vh; }
   #final .r { text-align: right; }
-  #final .lbl { font-size: 1.7vw; letter-spacing: .2em; color: #b08a1e; }
+  #final .lbl { font-size: 1.7vw; letter-spacing: .2em; color: #1487c0; }
   #cd { font-size: min(7vw, 13vh); line-height: 1; font-variant-numeric: tabular-nums; }
   #url { font-size: 2.6vw; margin-top: 1vh; color: #fff; }
   .help { position: fixed; left: 1vw; bottom: 1vh; font: 11px/1 ui-monospace, monospace; color: rgba(128,128,128,.4); z-index: 9; }
@@ -81,7 +81,7 @@ if (params.get('bg')) { $('slide').innerHTML = ''; $('slide').style.backgroundIm
 
 const qr = qrcode(0, 'M'); qr.addData(location.origin + '/'); qr.make();
 $('qr').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
-$('qr').querySelector('rect').setAttribute('fill', '#f5c542');
+$('qr').querySelector('rect').setAttribute('fill', '#19b5fe');
 $('url').textContent = location.host;
 
 let opensAt = 0, offset = 0, timers = [], audio = null, running = false;

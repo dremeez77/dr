@@ -5,35 +5,35 @@
 <title>Сцена: история с голосованием</title>
 <style>
   html, body { height: 100%; margin: 0; }
-  body { background: #0a0c0f; color: #e9edf1; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow: hidden; cursor: none; }
+  body { background: #040b2c; color: #e9edf1; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow: hidden; cursor: none; }
   .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
   #app { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 34vw; gap: 3vw; padding: 5vh 4vw; box-sizing: border-box; }
-  .step { font: 700 1.5vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .2em; color: #8793a1; }
+  .step { font: 700 1.5vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .2em; color: #93a5cf; }
   h1 { font-size: 4.6vw; line-height: 1.05; margin: 1.6vh 0 2vh; }
-  .txt { font-size: 2.05vw; line-height: 1.35; color: #cfd6dd; margin: 0 0 3vh; }
-  .opt { position: relative; margin-top: 1.6vh; padding: 1.9vh 1.6vw; border: .15vw solid #262e38; border-radius: 1.2vw; font-size: 2vw; line-height: 1.25; overflow: hidden; background: #12161b; }
-  .opt .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(245,197,66,.16); transition: width .5s; }
+  .txt { font-size: 2.05vw; line-height: 1.35; color: #d5def3; margin: 0 0 3vh; }
+  .opt { position: relative; margin-top: 1.6vh; padding: 1.9vh 1.6vw; border: .15vw solid #1d2f73; border-radius: 1.2vw; font-size: 2vw; line-height: 1.25; overflow: hidden; background: #0a1543; }
+  .opt .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(25,181,254,.16); transition: width .5s; }
   .opt .row { position: relative; display: flex; gap: 1.2vw; align-items: baseline; }
-  .opt .l { font: 700 2vw/1 ui-monospace, Menlo, Consolas, monospace; color: #f5c542; }
-  .opt .n { margin-left: auto; font: 700 2vw/1 ui-monospace, Menlo, Consolas, monospace; color: #8793a1; white-space: nowrap; }
+  .opt .l { font: 700 2vw/1 ui-monospace, Menlo, Consolas, monospace; color: #19b5fe; }
+  .opt .n { margin-left: auto; font: 700 2vw/1 ui-monospace, Menlo, Consolas, monospace; color: #93a5cf; white-space: nowrap; }
   .opt.win { border-color: #ff5d5d; } .opt.win .bar { background: rgba(255,93,93,.22); } .opt.win .l, .opt.win .n { color: #ff5d5d; }
   .opt.dim { opacity: .45; }
   .outcome { margin-top: 2.6vh; font-size: 1.9vw; line-height: 1.35; padding-left: 1.4vw; border-left: .4vw solid #ff5d5d; min-height: 5vh; }
   .outcome.safe { border-color: #3ddc84; }
   aside { display: flex; flex-direction: column; align-items: stretch; gap: 2.4vh; }
-  .card { background: #12161b; border: .12vw solid #262e38; border-radius: 1.4vw; padding: 2.4vh 1.6vw; text-align: center; }
-  .card .lbl { font: 700 1.15vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .18em; color: #8793a1; }
+  .card { background: #0a1543; border: .12vw solid #1d2f73; border-radius: 1.4vw; padding: 2.4vh 1.6vw; text-align: center; }
+  .card .lbl { font: 700 1.15vw/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .18em; color: #93a5cf; }
   #debt { font: 800 4.7vw/1.1 ui-monospace, Menlo, Consolas, monospace; color: #ff5d5d; margin-top: 1.2vh; font-variant-numeric: tabular-nums; white-space: nowrap; }
   #debt.zero { color: #3ddc84; }
   #delta { font: 700 1.9vw/1 ui-monospace, Menlo, Consolas, monospace; color: #ff5d5d; height: 2.2vw; margin-top: .6vh; }
   #qr { background: #fff; border-radius: 1vw; padding: 1.2vh; margin: 1.4vh auto 0; width: 25vh; }
   #qr svg { display: block; width: 100%; height: auto; }
   .url { font: 700 1.6vw/1.2 ui-monospace, Menlo, Consolas, monospace; margin-top: 1.2vh; overflow-wrap: anywhere; }
-  .voters { font-size: 1.5vw; color: #8793a1; margin-top: .8vh; }
+  .voters { font-size: 1.5vw; color: #93a5cf; margin-top: .8vh; }
   /* Заставка и финал занимают весь экран */
-  #full { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 5vh 7vw; background: #0a0c0f; }
+  #full { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 5vh 7vw; background: #040b2c; }
   #full h1 { font-size: 4.6vw; margin: 1.5vh 0; }
-  #full p { font-size: 2.1vw; color: #cfd6dd; max-width: 72vw; line-height: 1.35; margin: 1.6vh 0; }
+  #full p { font-size: 2.1vw; color: #d5def3; max-width: 72vw; line-height: 1.35; margin: 1.6vh 0; }
   #full .big { font: 800 13vw/1 ui-monospace, Menlo, Consolas, monospace; color: #ff5d5d; margin: 1vh 0; white-space: nowrap; }
   #full .big.zero { color: #3ddc84; }
   #full .sub { font-size: 2.6vw; color: #e9edf1; }
@@ -82,7 +82,7 @@ function render() {
     full.style.display = 'flex';
     full.innerHTML = `<div class="step">${esc(S.name).toUpperCase()}</div><h1>Решаете вы</h1><p>${esc(S.intro)}</p>
       <div style="background:#fff;border-radius:1vw;padding:1.2vh;width:34vh;margin-top:1vh">${$('qr').innerHTML}</div>
-      <p class="mono" style="color:#f5c542;font-weight:700">${esc(location.host)}/vote</p>`;
+      <p class="mono" style="color:#19b5fe;font-weight:700">${esc(location.host)}/vote</p>`;
     shownDebt = 0; return;
   }
   if (S.phase === 'final') {

@@ -14,7 +14,7 @@ const URL_ = arg('url').replace(/\/$/, '');
 const OUT = path.join(__dirname, 'out');
 fs.mkdirSync(OUT, { recursive: true });
 
-const GOLD = '#f5c542', BG = '#0a0c0f', MUTED = '#8793a1';
+const GOLD = '#19b5fe', BG = '#040b2c', MUTED = '#93a5cf';
 const ABC = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
 // Простой шифр «буква → её номер в алфавите»: первая загадка ещё до старта игры.
 const a1z33 = t => t.toLowerCase().split(' ').map(w => [...w].map(ch => ABC.indexOf(ch) + 1).join('-')).join('  ·  ');
@@ -37,13 +37,13 @@ const CSS = `
   html, body { margin: 0; height: 100%; }
   body { background: ${BG}; color: #f2f4f6; font-family: "Inter Display", Inter, Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page { position: relative; width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direction: column; padding: 7vw; }
-  .page::before { content: ""; position: absolute; inset: 3.2vw; border: .22vw solid rgba(245,197,66,.45); pointer-events: none; }
+  .page::before { content: ""; position: absolute; inset: 3.2vw; border: .22vw solid rgba(25,181,254,.45); pointer-events: none; }
   .mono { font-family: "JetBrains Mono", monospace; }
   .gold { color: ${GOLD}; }
   .top { display: flex; justify-content: space-between; align-items: center; font: 700 1.9vw/1 "JetBrains Mono", monospace; letter-spacing: .3em; color: ${MUTED}; }
   .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; gap: 4vw; }
   .date { font: 900 17vw/.82 "Inter Display", Inter, sans-serif; color: ${GOLD}; letter-spacing: -.03em; }
-  .where { text-align: right; font: 600 2.3vw/1.45 "JetBrains Mono", monospace; color: #cfd6dd; }
+  .where { text-align: right; font: 600 2.3vw/1.45 "JetBrains Mono", monospace; color: #d5def3; }
   .where small { display: block; color: ${MUTED}; font-size: 1.7vw; }
   .tease { font: 600 1.75vw/1.6 "JetBrains Mono", monospace; color: ${MUTED}; letter-spacing: .04em; margin-top: 3vw; }
   h1 { font: 900 13.5vw/.9 "Inter Display", Inter, sans-serif; letter-spacing: -.035em; margin: 0; text-transform: uppercase; }
@@ -53,7 +53,7 @@ const CSS = `
 `;
 
 // ---------- Тизеры: до открытия, без адреса сайта и без объяснений ----------
-const footer = `<div class="foot"><div class="date">23.11</div><div class="where">АКТОВЫЙ ЗАЛ<small>Неделя финансовой грамотности · СПбГАУ</small></div></div>`;
+const footer = `<div class="foot"><div class="date">23.11</div><div class="where">АКТОВЫЙ ЗАЛ<small>Неделя финансовой грамотности · СПбГАУ · при поддержке ВТБ</small></div></div>`;
 const head = n => `<div class="top"><span>ХРАНИЛИЩЕ</span><span>${n} / 3</span></div>`;
 
 const TEASERS = {
@@ -69,7 +69,7 @@ const TEASERS = {
     ${footer}</div>`,
   'teaser-3-ai': `<div class="page">${head(3)}
     <h1 style="margin-top:11vw;font-size:11.7vw;white-space:nowrap">Нейросеть<br><span class="gold">не поможет.</span></h1>
-    <p style="font:500 3.3vw/1.4 Inter,sans-serif;color:#cfd6dd;margin:6vw 0 0;max-width:70vw">Четыре загадки. Решить их сможет только тот, кто думает своей головой.</p>
+    <p style="font:500 3.3vw/1.4 Inter,sans-serif;color:#d5def3;margin:6vw 0 0;max-width:70vw">Четыре загадки. Решить их сможет только тот, кто думает своей головой.</p>
     <div class="tease">${TEASE}</div>
     <div style="margin-top:7vw;opacity:.9">${glyphRows(2, 10, 404, '6.2vw')}</div>
     ${footer}</div>`,
@@ -91,14 +91,14 @@ const POSTER = `<div class="page">
     <div class="emb" style="width:19vw;height:19vw;flex:none">${emblem(GOLD, 5)}</div>
     <h1 style="font-size:6.9vw;white-space:nowrap">Четыре замка.<br><span class="gold">Один приз.</span></h1>
   </div>
-  <p style="font:500 3vw/1.42 Inter,sans-serif;color:#cfd6dd;margin:4vw 0 0">Приз от банка ВТБ заперт в хранилище. Каждый день открывается новая загадка. Кто решит раньше, получит больше баллов. Нейросеть не поможет.</p>
-  <div style="margin-top:3.5vw;border-top:.2vw solid #262e38">
-    ${sched.map(([d, t, n], i) => `<div style="display:flex;align-items:baseline;gap:3vw;padding:1.55vw 0;border-bottom:.2vw solid #262e38;font:700 3.3vw/1 'JetBrains Mono',monospace">
+  <p style="font:500 3vw/1.42 Inter,sans-serif;color:#d5def3;margin:4vw 0 0">Приз от банка ВТБ заперт в хранилище. Каждый день открывается новая загадка. Кто решит раньше, получит больше баллов. Нейросеть не поможет.</p>
+  <div style="margin-top:3.5vw;border-top:.2vw solid #1d2f73">
+    ${sched.map(([d, t, n], i) => `<div style="display:flex;align-items:baseline;gap:3vw;padding:1.55vw 0;border-bottom:.2vw solid #1d2f73;font:700 3.3vw/1 'JetBrains Mono',monospace">
       <span style="width:24vw;color:${MUTED}">${d}</span><span style="width:17vw;color:${GOLD}">${t}</span><span style="font-family:Inter,sans-serif;font-weight:${i === 4 ? 800 : 600};color:${i === 4 ? GOLD : '#f2f4f6'}">${n}</span></div>`).join('')}
   </div>
   <div class="foot" style="align-items:center">
     <div>${qrBlock}</div>
-    <div style="font:500 2.3vw/1.45 Inter,sans-serif;color:#cfd6dd;max-width:50vw">
+    <div style="font:500 2.3vw/1.45 Inter,sans-serif;color:#d5def3;max-width:50vw">
       <div style="font:700 1.8vw/1 'JetBrains Mono',monospace;letter-spacing:.2em;color:${MUTED};margin-bottom:1.6vw">КАК ИГРАТЬ</div>
       1. Сканируй код и войди через Telegram или ВКонтакте.<br>2. Жди сигнала от бота: замок открыт.<br>3. Решай быстрее всех. Играем по одному.
       <div style="margin-top:2.4vw;color:${MUTED};font-size:1.9vw">Неделя финансовой грамотности · СПбГАУ</div>
