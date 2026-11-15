@@ -432,6 +432,7 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
     bots: { tg: !!cfg.tgToken, vk: !!cfg.vkToken },
     trap_count: Number(kvGet('trap_count') || 0),
     final_question: kvGet('final_question') || '', final_answer: kvGet('final_answer') || '',
+    show_team: kvGet('show_team') || '', show_vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '',
     puzzles: q('SELECT * FROM puzzles ORDER BY num').all().map(p => ({
       ...p, answers: parse(p.answers, []), hints: parse(p.hints, []),
       solvers: q('SELECT COUNT(*) c FROM solves WHERE puzzle_id=?').get(p.id).c,
@@ -542,6 +543,7 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
   if (b.ends_at !== undefined) kvSet('ends_at', Number(b.ends_at) || 0);
   if (b.reset_trap) kvSet('trap_count', 0);
   if (b.final_question !== undefined) kvSet('final_question', String(b.final_question));
+  for (const k of ['show_team', 'show_vtb', 'auction_price']) if (b[k] !== undefined) kvSet(k, String(b[k]).slice(0, 2000));
   if (b.final_answer !== undefined) kvSet('final_answer', String(b.final_answer));
   return { ok: true };
 });
@@ -552,6 +554,17 @@ route('GET', /^\/api\/admin\/final$/, ctx => {
   const top = q(`SELECT u.nick, u.group_name, SUM(s.points) total, MAX(s.solved_at) last FROM solves s JOIN users u ON u.id=s.user_id
                  WHERE u.banned=0 AND u.is_staff=0 GROUP BY u.id ORDER BY total DESC, last ASC LIMIT 3`).all();
   return { top, question: kvGet('final_question') || '', answer: kvGet('final_answer') || '' };
+});
+
+// Данные для презентации открытия: состав команды, проверки перед стартом, время первого замка (даже если он ещё черновик).
+route('GET', /^\/api\/admin\/show$/, ctx => {
+  requireAdmin(ctx);
+  const t = now();
+  const first = q("SELECT num, opens_at, published FROM puzzles WHERE kind='lock' AND opens_at>? ORDER BY opens_at LIMIT 1").get(t)
+    || q("SELECT num, opens_at, published FROM puzzles WHERE kind='lock' ORDER BY opens_at LIMIT 1").get();
+  return { team: kvGet('show_team') || '', vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '',
+    trap_count: Number(kvGet('trap_count') || 0), story_phase: story.phase, first_lock: first || null,
+    base_url: cfg.baseUrl, vk: !!cfg.vkToken };
 });
 
 route('POST', /^\/api\/admin\/broadcast$/, async ctx => {
@@ -568,7 +581,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html' };
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));

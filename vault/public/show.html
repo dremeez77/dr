@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Открытие недели — презентация</title>
+<style>
+  :root { --bg: #040b2c; --panel: #0a1543; --line: #1d2f73; --text: #eef2fb; --muted: #93a5cf; --blue: #19b5fe; --red: #ff5d5d; --green: #3ddc84;
+          --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; --u: min(1vw, 1.78vh); }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: "Inter Display", Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--text); cursor: none; }
+  .slide { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+           background: radial-gradient(calc(var(--u) * 120) calc(var(--u) * 60) at 50% 40%, #0e1c57, var(--bg) 70%); padding: calc(var(--u) * 5); box-sizing: border-box; }
+  .slide.on { display: flex; animation: fade .45s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .slide.black { background: #000; }
+  iframe.slide { padding: 0; border: 0; width: 100%; height: 100%; background: #000; }
+  .kicker { font: 700 calc(var(--u) * 1.5)/1 var(--mono); letter-spacing: .3em; color: var(--muted); text-transform: uppercase; }
+  h1 { font-weight: 900; font-size: calc(var(--u) * 7.4); line-height: .98; letter-spacing: -.03em; margin: calc(var(--u) * 2) 0; text-wrap: balance; }
+  .blue { color: var(--blue); } .red { color: var(--red); } .muted { color: var(--muted); }
+  .sub { font-size: calc(var(--u) * 2.3); line-height: 1.4; color: #d5def3; max-width: calc(var(--u) * 80); margin: 0; text-wrap: balance; }
+  .emb { width: calc(var(--u) * 30); height: calc(var(--u) * 30); color: var(--blue); }
+  .emb svg { width: 100%; height: 100%; display: block; }
+  .pulse { animation: pulse 3.2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: .35; transform: scale(.97); } 50% { opacity: 1; transform: scale(1); } }
+
+  /* Аукцион */
+  .auc { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--u) * 4); align-items: center; width: 100%; max-width: calc(var(--u) * 150); }
+  .lot { border: calc(var(--u) * .25) solid var(--line); border-radius: calc(var(--u) * 2); padding: calc(var(--u) * 4) calc(var(--u) * 2); background: var(--panel); }
+  .lot .v { font: 900 calc(var(--u) * 7.5)/1 var(--mono); color: var(--green); white-space: nowrap; }
+  .bid .v { white-space: nowrap; font: 900 calc(var(--u) * 10)/1 var(--mono); font-variant-numeric: tabular-nums; transition: color .3s; }
+  .bid .v.over { color: var(--red); }
+  .bids { font: 600 calc(var(--u) * 1.6)/1.5 var(--mono); color: var(--muted); margin-top: calc(var(--u) * 1.5); min-height: calc(var(--u) * 5); }
+  .rule { font-size: calc(var(--u) * 2); color: #d5def3; margin-top: calc(var(--u) * 3); }
+  .rule b { color: var(--red); }
+  .sold { font: 900 calc(var(--u) * 6)/1 var(--mono); color: var(--red); letter-spacing: .08em; margin-bottom: calc(var(--u) * 1); }
+  .price { white-space: nowrap; font: 900 calc(var(--u) * 14)/1 var(--mono); color: var(--red); font-variant-numeric: tabular-nums; }
+
+  /* Команда */
+  .team { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--u) * 26), 1fr)); gap: calc(var(--u) * 2); width: 100%; max-width: calc(var(--u) * 140); margin-top: calc(var(--u) * 3); }
+  .member { background: var(--panel); border: calc(var(--u) * .15) solid var(--line); border-radius: calc(var(--u) * 1.6); padding: calc(var(--u) * 2.4); text-align: left; }
+  .member b { display: block; font-size: calc(var(--u) * 2.6); line-height: 1.15; }
+  .member span { display: block; font: 600 calc(var(--u) * 1.4)/1.3 var(--mono); color: var(--blue); letter-spacing: .1em; text-transform: uppercase; margin-top: calc(var(--u) * 1); }
+
+  /* Правила */
+  .rules { width: 100%; max-width: calc(var(--u) * 130); text-align: left; }
+  .r { display: flex; gap: calc(var(--u) * 3); align-items: baseline; padding: calc(var(--u) * 1.7) 0; border-bottom: calc(var(--u) * .15) solid var(--line); opacity: .12; transition: opacity .6s, transform .6s; transform: translateY(calc(var(--u) * 1)); }
+  .r.on { opacity: 1; transform: none; }
+  .r .n { font: 900 calc(var(--u) * 4.6)/1 var(--mono); color: var(--blue); width: calc(var(--u) * 5); flex: none; }
+  .r b { display: block; font-size: calc(var(--u) * 3.2); line-height: 1.12; }
+  .r span { display: block; font-size: calc(var(--u) * 1.9); color: #d5def3; margin-top: calc(var(--u) * .8); line-height: 1.35; }
+
+  /* Финал */
+  .end { display: grid; grid-template-columns: auto 1fr; gap: calc(var(--u) * 5); align-items: center; text-align: left; max-width: calc(var(--u) * 140); }
+  .qr { background: #fff; padding: calc(var(--u) * 1.4); border-radius: calc(var(--u) * 1.6); width: calc(var(--u) * 30); }
+  .qr svg { display: block; width: 100%; height: auto; }
+  .url { font: 800 calc(var(--u) * 3)/1.2 var(--mono); color: var(--blue); margin-top: calc(var(--u) * 1.5); overflow-wrap: anywhere; }
+  .cd { font: 900 calc(var(--u) * 9)/1 var(--mono); color: var(--blue); font-variant-numeric: tabular-nums; margin-top: calc(var(--u) * 1); }
+  .partner { position: absolute; bottom: calc(var(--u) * 3); left: 0; right: 0; font: 700 calc(var(--u) * 1.3)/1 var(--mono); letter-spacing: .26em; color: var(--muted); }
+
+  /* Служебное: видно только технику */
+  #check { position: fixed; right: 16px; top: 16px; z-index: 50; width: 420px; max-width: calc(100vw - 32px); background: #0a1543f2; border: 1px solid var(--line); border-radius: 14px;
+           padding: 16px 18px; font: 14px/1.5 system-ui, sans-serif; color: var(--text); cursor: default; }
+  #check h3 { margin: 0 0 8px; font-size: 16px; }
+  #check li { list-style: none; margin: 4px 0; }
+  #check ul { padding: 0; margin: 0 0 10px; }
+  #check .k { color: var(--muted); font-size: 12px; }
+  #hint { position: fixed; left: 12px; bottom: 8px; z-index: 40; font: 12px/1 var(--mono); color: rgba(150,165,207,.4); }
+</style>
+</head>
+<body>
+
+<!-- 0. Заставка, пока зал рассаживается -->
+<section class="slide" data-name="Заставка">
+  <div class="emb pulse" id="emb0"></div>
+</section>
+
+<!-- 1. Аукцион -->
+<section class="slide" data-name="Аукцион" id="sAuction">
+  <div class="kicker">Аукцион</div>
+  <div class="auc" style="margin-top:calc(var(--u)*4)">
+    <div class="lot"><div class="kicker" style="margin-bottom:calc(var(--u)*2)">Лот</div><div class="v">1 000 ₽</div><div class="sub" style="margin-top:calc(var(--u)*2)">одна купюра</div></div>
+    <div class="bid"><div class="kicker" style="margin-bottom:calc(var(--u)*2)">Ставка</div><div class="v" id="bid">50 ₽</div><div class="bids" id="bids"></div></div>
+  </div>
+  <div class="rule">Платит победитель. <b>И тот, кто окажется вторым.</b></div>
+</section>
+
+<!-- 2. Продано -->
+<section class="slide black" data-name="Продано" id="sSold">
+  <div class="sold">ПРОДАНО</div>
+  <div class="kicker" style="margin:calc(var(--u)*1) 0 calc(var(--u)*3)">тысяча рублей ушла за</div>
+  <div class="price" id="price">—</div>
+  <div class="sub" id="soldNote" style="margin-top:calc(var(--u)*4)">Запомните эту цифру.</div>
+</section>
+
+<!-- 3. Кто мы -->
+<section class="slide" data-name="Кто мы">
+  <div class="kicker">Неделя финансовой грамотности · СПбГАУ</div>
+  <h1>Лекции не будет.</h1>
+  <p class="sub">Следующие двадцать минут мы проверяем, как вы обращаетесь с деньгами.</p>
+  <div class="team" id="team"></div>
+</section>
+
+<!-- 4. QR-ловушка -->
+<iframe class="slide" data-name="Бесплатный кофе" data-src="/stage/trap" id="fTrap"></iframe>
+
+<!-- 5. История Тёмы -->
+<iframe class="slide" data-name="История Тёмы" data-src="/stage/story" id="fStory"></iframe>
+
+<!-- 6. Три правила -->
+<section class="slide" data-name="Три правила" id="sRules">
+  <div class="kicker" style="margin-bottom:calc(var(--u)*3)">Три правила</div>
+  <div class="rules">
+    <div class="r"><span class="n">1</span><div><b>Прежде чем войти — узнай, как выйти</b><span>Сколько я отдам всего? Что будет, если пропущу платёж? Нет ответа — нет подписи.</span></div></div>
+    <div class="r"><span class="n">2</span><div><b>Долг ради долга — это лопата</b><span>Потерял доход — звони в банк, а не в МФО.</span></div></div>
+    <div class="r"><span class="n">3</span><div><b>«Срочно», «бесплатно», «только сейчас» — стоп-слова</b><span>Настоящие деньги никуда не торопятся.</span></div></div>
+  </div>
+</section>
+
+<!-- 7. Взлом -->
+<iframe class="slide" data-name="Взлом" data-src="/stage/hack" id="fHack"></iframe>
+
+<!-- 8. Слово банку -->
+<section class="slide" data-name="Слово ВТБ">
+  <div class="kicker">Слово партнёру недели</div>
+  <h1>Банк <span class="blue">ВТБ</span></h1>
+  <p class="sub" id="vtb"></p>
+</section>
+
+<!-- 9. Финал открытия -->
+<section class="slide" data-name="Вход в игру">
+  <div class="end">
+    <div><div class="qr" id="qrEnd"></div><div class="url" id="urlEnd"></div></div>
+    <div>
+      <div class="kicker">Хранилище</div>
+      <h1 style="font-size:calc(var(--u)*6);margin:calc(var(--u)*1.5) 0">Замок №1 откроется<br><span class="blue" id="whenEnd">сегодня в 20:00</span></h1>
+      <div class="cd" id="cdEnd">--:--:--</div>
+      <p class="sub" style="margin-top:calc(var(--u)*2);text-align:left">Сканируй код и войди через ВКонтакте. Бот напишет, когда замок откроется.</p>
+    </div>
+  </div>
+  <div class="partner">НЕДЕЛЯ ФИНАНСОВОЙ ГРАМОТНОСТИ СПБГАУ · ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</div>
+</section>
+
+<div id="check"></div>
+<div id="hint"></div>
+
+<script src="/vendor/qrcode.js"></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rub = n => Number(n).toLocaleString('ru-RU') + ' ₽';
+const slides = [...document.querySelectorAll('.slide')];
+let cur = 0, info = null, offset = 0;
+
+// Эмблема Хранителя (та же, что на афишах)
+const EMB = c => `<svg viewBox="0 0 200 200"><g fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"><circle cx="100" cy="100" r="72"/><path d="M100 6 L100 44 M100 156 L100 194 M6 100 L44 100 M156 100 L194 100"/><circle cx="100" cy="88" r="15" fill="${c}" stroke="none"/><path d="M100 92 L88 134 L112 134 Z" fill="${c}" stroke="${c}" stroke-linejoin="round"/></g></svg>`;
+$('#emb0').innerHTML = EMB('#19b5fe');
+
+// QR всегда ведёт на тот адрес, с которого открыта презентация
+const qr = qrcode(0, 'M'); qr.addData(location.origin + '/'); qr.make();
+$('#qrEnd').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 1, scalable: true });
+$('#urlEnd').textContent = location.host;
+
+// ---------- Аукцион: техник вводит ставки цифрами и Enter ----------
+const bids = []; let typing = '', sold = false;
+function drawBid() {
+  const last = bids.length ? bids[bids.length - 1] : 50;
+  const el = $('#bid');
+  el.textContent = typing ? typing + ' ₽' : rub(last);
+  el.className = 'v' + ((typing ? Number(typing) : last) > 1000 ? ' over' : '');
+  $('#bids').textContent = bids.length ? bids.slice(-6).map(b => b.toLocaleString('ru-RU')).join('  →  ') : 'Начальная цена — 50 ₽';
+}
+drawBid();
+function sell() {
+  const p = bids.length ? bids[bids.length - 1] : 0;
+  $('#price').textContent = p ? rub(p) : '—';
+  $('#soldNote').textContent = p > 1000 ? `Это на ${rub(p - 1000)} больше, чем стоит лот. Запомните эту цифру.` : 'Запомните эту цифру.';
+  if (p) fetch('/api/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ auction_price: String(p) }) }).catch(() => {});
+  sold = true;
+}
+
+// ---------- Правила появляются по одному ----------
+let rulesShown = 0;
+const drawRules = () => document.querySelectorAll('#sRules .r').forEach((r, i) => r.classList.toggle('on', i < rulesShown));
+
+// ---------- Встроенные экраны ----------
+function frameOf(i) { const s = slides[i]; return s && s.tagName === 'IFRAME' ? s : null; }
+function loadFrame(f) {
+  if (!f || f.src) return;
+  let src = f.dataset.src;
+  if (f.id === 'fHack' && info && info.first_lock) src += '?opens=' + info.first_lock.opens_at;
+  f.src = src;
+}
+function press(f, code, shift) {
+  try { f.contentWindow.dispatchEvent(new f.contentWindow.KeyboardEvent('keydown', { code, key: code === 'Space' ? ' ' : code, shiftKey: !!shift })); } catch {}
+}
+let trapRevealed = false, hackStarted = false;
+
+// ---------- Навигация ----------
+function show(i) {
+  cur = Math.max(0, Math.min(slides.length - 1, i));
+  slides.forEach((s, k) => s.classList.toggle('on', k === cur));
+  loadFrame(frameOf(cur)); loadFrame(frameOf(cur + 1)); // следующий экран грузится заранее
+  const f = frameOf(cur); if (f) setTimeout(() => { try { f.contentWindow.focus(); window.focus(); } catch {} }, 50);
+  $('#hint').style.display = frameOf(cur) ? 'none' : 'block'; // у встроенных экранов своя подсказка
+  $('#hint').textContent = `${cur + 1}/${slides.length} · ${slides[cur].dataset.name} · →/кликер: дальше · ←: назад · F: полный экран · C: проверка`;
+}
+async function next() {
+  const s = slides[cur];
+  if (s.id === 'sAuction') { if (typing) return commitBid(); sell(); return show(cur + 1); }
+  if (s.id === 'fTrap' && !trapRevealed) { trapRevealed = true; return press(s, 'Space'); }
+  if (s.id === 'fStory') {
+    try { const st = await (await fetch('/api/story')).json(); if (st.phase !== 'final') return press(s, 'Space'); } catch { return press(s, 'Space'); }
+  }
+  if (s.id === 'sRules' && rulesShown < 3) { rulesShown++; return drawRules(); }
+  if (s.id === 'fHack' && !hackStarted) { hackStarted = true; return press(s, 'Space'); }
+  show(cur + 1);
+}
+function prev() {
+  const s = slides[cur];
+  if (s.id === 'sRules' && rulesShown > 0) { rulesShown--; return drawRules(); }
+  if (s.id === 'fTrap' && trapRevealed) { trapRevealed = false; return press(s, 'KeyB'); }
+  if (s.id === 'fHack' && hackStarted) { hackStarted = false; return press(s, 'KeyR'); }
+  show(cur - 1);
+}
+function commitBid() { const n = Number(typing); typing = ''; if (n > 0) bids.push(n); drawBid(); }
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  $('#check').style.display = e.code === 'KeyC' ? ($('#check').style.display === 'none' ? 'block' : 'none') : 'none';
+  if (slides[cur].id === 'sAuction') {
+    if (/^Digit\d$|^Numpad\d$/.test(e.code)) { if (typing.length < 6) typing += e.code.slice(-1); return drawBid(); }
+    if (e.code === 'Backspace') { typing = typing.slice(0, -1); return drawBid(); }
+    if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); if (typing) return commitBid(); }
+    if (e.code === 'KeyZ' && bids.length) { bids.pop(); return drawBid(); }
+  }
+  if (['Space', 'ArrowRight', 'PageDown', 'Enter', 'ArrowDown'].includes(e.code)) { e.preventDefault(); next(); }
+  else if (['ArrowLeft', 'PageUp', 'ArrowUp'].includes(e.code)) { e.preventDefault(); prev(); }
+  else if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+  else if (e.code === 'KeyR' && e.shiftKey && slides[cur].id === 'fStory') press(slides[cur], 'KeyR', true);
+  else if (e.code === 'Home') show(0);
+});
+// Клик мышью по экрану тоже листает вперёд (запасной вариант без кликера)
+addEventListener('mousedown', e => { if (!e.target.closest('#check')) next(); });
+
+// ---------- Проверка перед стартом ----------
+async function loadInfo() {
+  let ok = true, html = '';
+  try {
+    const r = await fetch('/api/admin/show');
+    if (r.status === 401 || r.status === 403) { ok = false; }
+    else info = await r.json();
+  } catch { ok = false; }
+  const st = await fetch('/api/state').then(r => r.json()).catch(() => null);
+  if (st) offset = st.now - Date.now();
+  const li = (good, text, fix) => `<li>${good ? '✅' : '⚠️'} ${text}${!good && fix ? `<div class="k">${fix}</div>` : ''}</li>`;
+  if (!ok) html = li(false, 'Нет входа администратора', 'Открой <a href="/admin" target="_blank" style="color:#19b5fe">/admin</a> в этом же браузере, войди и обнови эту страницу (F5). Без этого не будут листаться история и не сохранится цена аукциона.');
+  else {
+    const https = location.protocol === 'https:';
+    html = li(true, 'Вход администратора') +
+      li(https, `Адрес: ${esc(location.host)}`, 'QR-коды ведут на адрес, с которого открыта презентация. На выступлении открывай её по домену с https.') +
+      li(info.vk, 'Бот ВКонтакте подключён', 'Без бота игроки не смогут войти.') +
+      li(info.story_phase === 'idle', 'История Тёмы сброшена', 'Дойди до слайда истории и нажми Shift+R.') +
+      li(info.trap_count === 0, `Счётчик ловушки: ${info.trap_count}`, 'Админка → «Настройки и сцена» → «Обнулить перед выступлением».') +
+      li(!!info.first_lock, info.first_lock ? `Замок №${info.first_lock.num}: ${new Date(info.first_lock.opens_at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}${info.first_lock.published ? '' : ' (черновик — так и надо до шоу)'}` : 'Замки не загружены', 'Загрузи набор загадок.') +
+      li(!!info.team.trim(), 'Состав команды заполнен', 'Админка → «Настройки и сцена» → «Презентация открытия».');
+    $('#team').innerHTML = info.team.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [n, ...r] = l.split(/\s+[—-]\s+/); return `<div class="member"><b>${esc(n)}</b><span>${esc(r.join(' — '))}</span></div>`; }).join('');
+    $('#vtb').textContent = info.vtb || '';
+    if (info.first_lock) {
+      const d = new Date(info.first_lock.opens_at), today = d.toDateString() === new Date().toDateString();
+      $('#whenEnd').textContent = (today ? 'сегодня' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })) + ' в ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    }
+  }
+  $('#check').innerHTML = `<h3>Проверка перед стартом</h3><ul>${html}</ul><div class="k">Окно скроется при первом нажатии. Вернуть — клавиша C.</div>`;
+}
+setInterval(() => {
+  if (!info || !info.first_lock) return;
+  const ms = info.first_lock.opens_at - (Date.now() + offset), el = $('#cdEnd');
+  if (ms <= 0) { el.textContent = 'ОТКРЫТ'; return; }
+  const s = Math.floor(ms / 1000), p = n => String(n).padStart(2, '0'), d = Math.floor(s / 86400);
+  el.textContent = (d ? d + ' д ' : '') + `${p(Math.floor(s % 86400 / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
+}, 250);
+
+loadInfo().then(() => show(0));
+</script>
+</body>
+</html>

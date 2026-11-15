@@ -30,7 +30,7 @@
   #lines div { min-height: 1.5em; text-shadow: 0 0 1.2vw rgba(25,181,254,.55); white-space: pre-wrap; }
   .cur::after { content: "█"; animation: blink .8s steps(1) infinite; margin-left: .2em; }
   @keyframes blink { 50% { opacity: 0; } }
-  #final { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 4vw; opacity: 0; transition: opacity 1.2s; }
+  #final { position: relative; z-index: 2; margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 4vw; opacity: 0; transition: opacity 1.2s; }
   #final.on { opacity: 1; }
   #qr { background: #19b5fe; padding: 1.2vh; border-radius: 1.2vh; }
   #qr svg { display: block; width: 27vh; height: 27vh; }
@@ -85,10 +85,12 @@ $('qr').querySelector('rect').setAttribute('fill', '#19b5fe');
 $('url').textContent = location.host;
 
 let opensAt = 0, offset = 0, timers = [], audio = null, running = false;
+// Презентация передаёт время первого замка через ?opens=…, потому что до шоу он ещё черновик и в /api/state его нет.
+if (Number(params.get('opens')) > 0) opensAt = Number(params.get('opens'));
 fetch('/api/state').then(r => r.json()).then(s => {
   offset = s.now - Date.now();
   const p = s.puzzles.find(x => x.opens_at > s.now) || s.puzzles[0];
-  if (p) opensAt = p.opens_at;
+  if (p && !(Number(params.get('opens')) > 0)) opensAt = p.opens_at;
 }).catch(() => {});
 const later = (fn, ms) => timers.push(setTimeout(fn, ms));
 

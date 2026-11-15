@@ -191,10 +191,16 @@ function paneSet() {
       <label>Исходный текст</label><textarea id="gp" style="min-height:90px;font-family:var(--sans)"></textarea>
       <label>Ключ — цена аукциона, только цифры</label><input id="gk" inputmode="numeric" style="max-width:200px">
       <label>Шифр (вставь в текст замка №1 между &lt;pre&gt; и &lt;/pre&gt;)</label><textarea id="gc" readonly style="min-height:90px"></textarea></div>`);
+  $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Презентация открытия</b><p class="note">Открой <a href="/show" target="_blank">/show</a> на ноутбуке у сцены. Здесь — то, что покажется на слайдах.</p>
+      <label>Команда: по одной строке «Имя — роль»</label><textarea id="st" style="min-height:110px;font-family:var(--sans)" placeholder="Даниил Максютов — ведущий">${esc(D.show_team)}</textarea>
+      <label>Представитель ВТБ: имя и должность</label><input id="sv" value="${esc(D.show_vtb)}" placeholder="Иван Иванов, руководитель отделения">
+      <div class="bar"><button id="saveShow">Сохранить</button><span class="ok" id="sok"></span>${D.auction_price ? `<span>Цена аукциона с презентации: <b class="mono">${esc(D.auction_price)} ₽</b></span>` : ''}</div></div>`);
+  $('#saveShow').onclick = async () => { await api('/api/admin/settings', { show_team: $('#st').value, show_vtb: $('#sv').value }); $('#sok').textContent = 'Сохранено'; };
   const ABC = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
   const enc = () => { const key = $('#gk').value.replace(/\D/g, ''); let i = 0;
     $('#gc').value = key ? [...$('#gp').value].map(ch => { const k = ABC.indexOf(ch.toLowerCase()); return k < 0 ? ch.toUpperCase() : ABC[(k + Number(key[i++ % key.length])) % 33].toUpperCase(); }).join('') : ''; };
   $('#gp').oninput = enc; $('#gk').oninput = enc;
+  if (D.auction_price) $('#gk').value = D.auction_price; // цена, которую техник ввёл на слайде аукциона
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
 }
