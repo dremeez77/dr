@@ -235,7 +235,7 @@ async function openLogin() {
   modal(`<h3>Вход в игру</h3><p class="muted" style="margin:0">Вход идёт через бота: он же пришлёт сигнал, когда откроется новый замок.</p>
     <div class="row">
       ${L.tg ? '<button data-p="tg">Войти через Telegram</button>' : ''}
-      ${L.vk ? '<button data-p="vk" class="ghost">Войти через ВКонтакте</button>' : ''}
+      ${L.vk ? `<button data-p="vk" class="${L.tg ? 'ghost' : ''}">Войти через ВКонтакте</button>` : ''}
       ${L.dev ? '<button data-p="dev" class="ghost">Тестовый вход (только для проверки)</button>' : ''}
       ${!L.tg && !L.vk && !L.dev ? '<p class="err">Вход пока не настроен. Организаторам: задайте токены ботов в файле .env.</p>' : ''}
     </div><div class="err" id="lerr"></div>`);
