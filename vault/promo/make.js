@@ -100,7 +100,7 @@ const POSTER = `<div class="page">
     <div>${qrBlock}</div>
     <div style="font:500 2.3vw/1.45 Inter,sans-serif;color:#d5def3;max-width:50vw">
       <div style="font:700 1.8vw/1 'JetBrains Mono',monospace;letter-spacing:.2em;color:${MUTED};margin-bottom:1.6vw">КАК ИГРАТЬ</div>
-      1. Сканируй код и войди через ВКонтакте.<br>2. Жди сигнала от бота: замок открыт.<br>3. Решай быстрее всех. Играем по одному.
+      1. Сканируй код и войди через ВКонтакте.<br>2. Жди сигнала от бота: замок открыт.<br>3. Решай быстрее всех. Играем по одному.<br><span style="color:#93a5cf">Не открывается? Выключи VPN.</span>
       <div style="margin-top:2.4vw;color:${MUTED};font-size:1.9vw">Неделя финансовой грамотности · СПбГАУ</div>
     </div>
   </div></div>`;

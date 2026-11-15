@@ -52,7 +52,7 @@
   </main>
   <aside>
     <div class="card"><div class="lbl" id="debtLbl">ДОЛГ</div><div id="debt">0 ₽</div><div id="delta"></div></div>
-    <div class="card"><div class="lbl">ГОЛОСУЙ С ТЕЛЕФОНА</div><div id="qr"></div><div class="url" id="url"></div><div class="voters" id="voters"></div></div>
+    <div class="card"><div class="lbl">ГОЛОСУЙ С ТЕЛЕФОНА</div><div id="qr"></div><div class="url" id="url"></div><div class="voters" id="voters"></div><div class="voters" style="margin-top:.4vh">Не открывается? Выключи VPN</div></div>
   </aside>
 </div>
 <div id="full"></div>
@@ -82,7 +82,7 @@ function render() {
     full.style.display = 'flex';
     full.innerHTML = `<div class="step">${esc(S.name).toUpperCase()}</div><h1>Решаете вы</h1><p>${esc(S.intro)}</p>
       <div style="background:#fff;border-radius:1vw;padding:1.2vh;width:34vh;margin-top:1vh">${$('qr').innerHTML}</div>
-      <p class="mono" style="color:#19b5fe;font-weight:700">${esc(location.host)}/vote</p>`;
+      <p class="mono" style="color:#19b5fe;font-weight:700">${esc(location.host)}/vote</p><p style="font-size:1.6vw;color:#93a5cf;margin:0">Не открывается? Выключи VPN на минуту</p>`;
     shownDebt = 0; return;
   }
   if (S.phase === 'final') {
