@@ -44,6 +44,14 @@ detector:
   pre_seconds: 45        # сколько секунд ДО пика чата берём
   post_seconds: 20       # и ПОСЛЕ
 
+compilations:            # «N стримеров реагируют на один момент»
+  enabled: true
+  interval_minutes: 20   # как часто искать совпадения (вызов Claude только если есть новые клипы)
+  lookback_hours: 72
+  min_streamers: 2
+  max_seconds: 58        # для Shorts; для TikTok Creator Rewards можно 90
+  min_pool_score: 4      # слабые сюжетные моменты не выкидываем, а копим для подборок
+
 render:
   cam_ratio: 0.38        # доля высоты под вебку
   font: "DejaVu Sans"

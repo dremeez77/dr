@@ -84,6 +84,28 @@ class DB:
                 "SELECT COUNT(*) FROM clips WHERE streamer=? AND created_at>=?", (streamer, since)
             ).fetchone()[0]
 
+    def recent(self, audience: str, since: float, statuses: tuple[str, ...]) -> list[dict]:
+        q = ",".join("?" * len(statuses))
+        with self.lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM clips WHERE audience=? AND created_at>=? AND status IN ({q}) ORDER BY id",
+                (audience, since, *statuses),
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["meta"] = json.loads(d["meta"] or "{}")
+            out.append(d)
+        return out
+
+    def used_in_compilations(self) -> set[int]:
+        with self.lock:
+            rows = self.conn.execute("SELECT meta FROM clips WHERE source='compilation'").fetchall()
+        used: set[int] = set()
+        for r in rows:
+            used.update(json.loads(r["meta"] or "{}").get("clip_ids", []))
+        return used
+
     def stats(self, since: float) -> dict[str, int]:
         with self.lock:
             rows = self.conn.execute(

@@ -31,7 +31,14 @@ Write all viewer-facing text in the requested audience language:
 - description: 1-2 sentences.
 - hashtags: 3-6 tags without '#', always including gta6.
 - hook_text: overlay for the first 3 seconds, max 6 words, makes the viewer stay.
-Score 1-10 where 7+ means you would post it on a big channel today."""
+Score 1-10 where 7+ means you would post it on a big channel today.
+
+Also tag the in-game situation (in English, regardless of audience), so the same moment from different \
+streamers can be matched later:
+- event: short canonical description, specific enough that another streamer hitting the same moment gets \
+  nearly the same text (mission name, character, location, object, plot beat if identifiable).
+- event_type: story (cutscene / plot beat), mission, gameplay (open-world chaos), social (chat, irl, \
+  other streamers), other."""
 
 JUDGE_SCHEMA = {
     "type": "object",
@@ -45,8 +52,64 @@ JUDGE_SCHEMA = {
         "hashtags": {"type": "array", "items": {"type": "string"}},
         "hook_text": {"type": "string"},
         "reason": {"type": "string"},
+        "event": {"type": "string"},
+        "event_type": {"type": "string", "enum": ["story", "mission", "gameplay", "social", "other"]},
     },
-    "required": ["keep", "score", "start", "end", "title", "description", "hashtags", "hook_text", "reason"],
+    "required": ["keep", "score", "start", "end", "title", "description", "hashtags", "hook_text", "reason",
+                 "event", "event_type"],
+    "additionalProperties": False,
+}
+
+GROUP_SYSTEM = """You build "N streamers react to the same moment" compilations for a GTA 6 short-form channel. \
+These outperform single clips because viewers love comparing reactions.
+
+You get candidate clips from different streamers. Each has an event tag, a suggested best window and a \
+timestamped transcript (all times in seconds of that clip's source file). Find groups where at least \
+{min_streamers} DIFFERENT streamers react to the SAME in-game moment (same plot beat, mission, scene or \
+very specific situation). Similar-but-different situations do not count. Never put two clips of one streamer \
+in a group, never reuse a clip across groups. Return no groups rather than weak ones.
+
+For each group pick one segment per clip (start/end in that clip's source seconds, at least 4s each) focused \
+on the reaction. Total duration of all segments must be at most {max_seconds:.0f}s. Order segments for flow: \
+open with a strong hook, end with the biggest reaction.
+Viewer-facing text in {lang}: title (max 70 chars, e.g. "Streamers react to ..."), description (1-2 \
+sentences), hashtags (3-6, no '#', include gta6), hook_text (max 6 words, shown over the first segment). \
+Score 1-10 as for a big channel."""
+
+GROUP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "groups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "event": {"type": "string"},
+                    "segments": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "clip_id": {"type": "integer"},
+                                "start": {"type": "number"},
+                                "end": {"type": "number"},
+                            },
+                            "required": ["clip_id", "start", "end"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "hashtags": {"type": "array", "items": {"type": "string"}},
+                    "hook_text": {"type": "string"},
+                    "score": {"type": "integer"},
+                },
+                "required": ["event", "segments", "title", "description", "hashtags", "hook_text", "score"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["groups"],
     "additionalProperties": False,
 }
 
@@ -125,6 +188,14 @@ class Claude:
         data["start"], data["end"] = start, end
         data["hashtags"] = [h.lstrip("#").replace(" ", "") for h in data.get("hashtags", []) if h.strip()]
         return data
+
+    def group(self, audience: str, candidates: list[dict], min_streamers: int, max_seconds: float) -> list[dict]:
+        """candidates: [{id, streamer, event, event_type, window, transcript}] -> сырые группы от модели."""
+        system = GROUP_SYSTEM.format(min_streamers=min_streamers, max_seconds=max_seconds,
+                                     lang=LANG_NAMES.get(audience, audience))
+        content = "Candidate clips:\n" + json.dumps(candidates, ensure_ascii=False, indent=1)
+        data = self._json(system, content, GROUP_SCHEMA, 16000)
+        return data.get("groups", []) if data else []
 
     def find_facecam(self, frame: Path) -> Facecam | None:
         img = base64.standard_b64encode(frame.read_bytes()).decode()

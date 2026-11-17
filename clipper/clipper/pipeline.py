@@ -9,6 +9,7 @@ from pathlib import Path
 
 import aiohttp
 
+from . import compilation as C
 from . import render as R
 from .chat import TwitchChat, YouTubeChat
 from .config import Facecam, Settings, Streamer
@@ -54,6 +55,7 @@ class Pipeline:
         self.yt_chats: dict[str, YouTubeChat] = {}
         self.facecams: dict[str, tuple[Facecam | None, float]] = {}
         self.game_ids: set[str] = set()
+        self._comp_seen: dict[str, int] = {}
         self.paused = False
         self.session: aiohttp.ClientSession | None = None
         self.twitch: Twitch | None = None
@@ -75,6 +77,8 @@ class Pipeline:
             self.twitch = Twitch(self.s.twitch_client_id, self.s.twitch_client_secret, session)
             self.chat = TwitchChat(session, self.on_chat)
             tasks = [self._live_loop(), self._clips_loop(), self.chat.run(), self._cleanup_loop()]
+            if self.s.comp.enabled:
+                tasks.append(self._compilations_loop())
             if self.s.telegram_token:
                 self.bot = TelegramBot(self.s.telegram_token, session)
                 self.bot.on_action = self.on_action
@@ -261,22 +265,36 @@ class Pipeline:
         audio.unlink(missing_ok=True)
         verdict = self.claude.judge(st.name, st.audience, job.source, duration,
                                     transcript_lines(words), job.chat_sample, job.clip_title)
-        if not verdict or not verdict["keep"] or verdict["score"] < self.s.min_score:
+        score = verdict["score"] if verdict else None
+        keep = bool(verdict and verdict["keep"] and score >= self.s.min_score)
+        # слабый одиночный сюжетный момент — в пул для подборок (рендер не тратим)
+        pool = bool(verdict and not keep and self.s.comp.enabled and score >= self.s.comp.min_pool_score
+                    and verdict.get("event_type") in ("story", "mission"))
+        if not keep and not pool:
             reason = verdict["reason"] if verdict else "LLM недоступна"
             log.info("clip %s rejected by judge: %s", job.clip_id, reason)
-            self.db.update(job.clip_id, status="rejected_auto",
-                           score=verdict["score"] if verdict else None, meta={"reason": reason})
+            self.db.update(job.clip_id, status="rejected_auto", score=score, meta={"reason": reason})
             job.video.unlink(missing_ok=True)
             return None
         s, e = verdict["start"], verdict["end"]
-        rel = [R.Word(w.start - s, w.end - s, w.text) for w in words if w.end > s and w.start < e]
         facecam = self._facecam(st, job.video, min(job.moment_offset, max(duration - 1, 0)))
+        # исходник и слова храним 3 дня — из них собираются подборки
+        src = self.s.data_dir / "out" / f"{job.clip_id}_src{job.video.suffix}"
+        job.video.replace(src)
+        meta = {"reason": verdict["reason"], "event": verdict["event"], "event_type": verdict["event_type"],
+                "src": str(src), "duration": duration, "window": [round(s, 1), round(e, 1)],
+                "facecam": vars(facecam) if facecam else None,
+                "words": [[round(w.start, 2), round(w.end, 2), w.text] for w in words]}
+        fields = dict(score=score, title=verdict["title"], description=verdict["description"],
+                      hashtags=" ".join(verdict["hashtags"]), meta=meta)
+        if pool:
+            log.info("clip %s -> pool (%s/10): %s", job.clip_id, score, verdict["event"])
+            self.db.update(job.clip_id, status="pool", **fields)
+            return None
+        rel = [R.Word(w.start - s, w.end - s, w.text) for w in words if w.end > s and w.start < e]
         out = self.s.data_dir / "out" / f"{job.clip_id}_{st.name}.mp4"
-        R.render(job.video, out, s, e - s, rel, self.s.render, facecam, verdict["hook_text"])
-        job.video.unlink(missing_ok=True)
-        self.db.update(job.clip_id, status="review", score=verdict["score"], title=verdict["title"],
-                       description=verdict["description"], hashtags=" ".join(verdict["hashtags"]),
-                       video_path=str(out), meta={"reason": verdict["reason"], "facecam": bool(facecam)})
+        R.render(src, out, s, e - s, rel, self.s.render, facecam, verdict["hook_text"])
+        self.db.update(job.clip_id, status="review", video_path=str(out), **fields)
         verdict["video"] = out
         return verdict
 
@@ -297,16 +315,70 @@ class Pipeline:
 
     async def _send_for_review(self, job: Job, v: dict):
         st = job.streamer
-        tags = " ".join("#" + h for h in v["hashtags"])
         src = {"chat": "всплеск чата", "twitch_clip": "клип зрителей", "manual": "вручную"}[job.source]
-        caption = (f"🎬 {st.name} · {st.audience.upper()} · {v['score']}/10 · {src}\n\n"
-                   f"{v['title']}\n\n{v['description']}\n{tags}\n\n💬 {v['reason']}")
-        chat = self.s.chat_for(st.audience)
-        if not chat:
+        await self._send(job.clip_id, st.name, st.audience, src, v)
+
+    async def _send(self, clip_id: int, who: str, audience: str, src: str, v: dict):
+        tags = " ".join("#" + h for h in v["hashtags"])
+        caption = (f"🎬 {who} · {audience.upper()} · {v['score']}/10 · {src}\n\n"
+                   f"{v['title']}\n\n{v['description']}\n{tags}\n\n💬 {v.get('reason') or v.get('event', '')}")
+        chat = self.s.chat_for(audience)
+        if not chat or not self.bot:
             return
-        has_yt = bool(self.s.youtube_tokens.get(st.audience))
-        mid = await self.bot.send_clip(chat, v["video"], caption, job.clip_id, has_yt)
-        self.db.update(job.clip_id, tg_message_id=mid)
+        has_yt = bool(self.s.youtube_tokens.get(audience))
+        mid = await self.bot.send_clip(chat, v["video"], caption, clip_id, has_yt)
+        self.db.update(clip_id, tg_message_id=mid)
+
+    # ---------- подборки ----------
+    async def _compilations_loop(self):
+        while True:
+            await asyncio.sleep(self.s.comp.interval_minutes * 60)
+            if self.paused:
+                continue
+            for aud in sorted({st.audience for st in self.s.streamers}):
+                try:
+                    await self.make_compilations(aud)
+                except Exception as e:  # noqa: BLE001
+                    log.exception("compilations %s failed: %s", aud, e)
+
+    async def make_compilations(self, audience: str) -> int:
+        c = self.s.comp
+        used = self.db.used_in_compilations()
+        clips = [x for x in self.db.recent(audience, time.time() - c.lookback_hours * 3600, C.POOL_STATUSES)
+                 if C.usable(x, used)]
+        if len({x["streamer"] for x in clips}) < c.min_streamers:
+            return 0
+        signature = max(x["id"] for x in clips)
+        if self._comp_seen.get(audience) == signature:
+            return 0  # новых кандидатов не появилось — не тратим вызов модели
+        self._comp_seen[audience] = signature
+        groups = await asyncio.to_thread(self.claude.group, audience, C.payload(clips), c.min_streamers,
+                                         c.max_seconds)
+        by_id = {x["id"]: x for x in clips}
+        made = 0
+        for g in groups:
+            segs = C.validate_group(g, by_id, c.min_streamers, c.max_seconds)
+            if not segs or g.get("score", 0) < self.s.min_score:
+                continue
+            ids = sorted(x.clip_id for x in segs)
+            who = " + ".join(x.streamer for x in segs)
+            cid = self.db.create("comp:" + ",".join(map(str, ids)), who, audience, "compilation", time.time(),
+                                 {"clip_ids": ids})
+            if cid is None:
+                continue
+            for x in segs:
+                by_id.pop(x.clip_id, None)  # один клип — одна подборка
+            out = self.s.data_dir / "out" / f"{cid}_compilation.mp4"
+            await asyncio.to_thread(R.render_compilation, segs, out, self.s.render, g.get("hook_text", ""))
+            hashtags = [h.lstrip("#").replace(" ", "") for h in g.get("hashtags", []) if h.strip()]
+            self.db.update(cid, status="review", score=int(g["score"]), title=g["title"],
+                           description=g["description"], hashtags=" ".join(hashtags), video_path=str(out),
+                           meta={"clip_ids": ids, "event": g.get("event", "")})
+            log.info("compilation %s: %s — %s", cid, who, g.get("event"))
+            await self._send(cid, who, audience, f"подборка ×{len(segs)}",
+                             {**g, "hashtags": hashtags, "video": out, "reason": g.get("event", "")})
+            made += 1
+        return made
 
     # ---------- модерация ----------
     async def on_action(self, clip_id: int, action: str) -> str:
@@ -352,7 +424,13 @@ class Pipeline:
             stats = ", ".join(f"{k}: {v}" for k, v in sorted(st.items())) or "пусто"
             return (f"{'⏸ ПАУЗА' if self.paused else '▶️ Работаю'}\nВ эфире с GTA: {live}\n"
                     f"Пишу: {rec}\nОчередь: {self.queue.qsize()}\nЗа 24ч: {stats}")
-        return "Команды: /status, /pause, /resume"
+        if cmd == "/compile":
+            self._comp_seen.clear()
+            made = 0
+            for aud in sorted({st.audience for st in self.s.streamers}):
+                made += await self.make_compilations(aud)
+            return f"🧩 Собрано подборок: {made}"
+        return "Команды: /status, /pause, /resume, /compile"
 
     # ---------- уборка ----------
     async def _cleanup_loop(self):

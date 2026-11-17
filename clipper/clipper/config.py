@@ -63,12 +63,24 @@ class RenderCfg:
 
 
 @dataclass
+class CompCfg:
+    """Подборки «N стримеров реагируют на один момент»."""
+    enabled: bool = True
+    interval_minutes: int = 20
+    lookback_hours: int = 72
+    min_streamers: int = 2
+    max_seconds: float = 58.0
+    min_pool_score: int = 4   # слабые одиночные сюжетные моменты копим для подборок
+
+
+@dataclass
 class Settings:
     data_dir: Path
     game_names: list[str]
     streamers: list[Streamer]
     detector: DetectorCfg
     render: RenderCfg
+    comp: CompCfg = field(default_factory=CompCfg)
     buffer_minutes: int = 8
     segment_seconds: int = 6
     quality: str = "720p60,720p,best"
@@ -134,6 +146,7 @@ def load(path: str | Path) -> Settings:
         streamers=[_streamer(x) for x in raw.get("streamers", [])],
         detector=DetectorCfg(**raw.get("detector", {})),
         render=RenderCfg(**raw.get("render", {})),
+        comp=CompCfg(**raw.get("compilations", {})),
         buffer_minutes=rec.get("buffer_minutes", 8),
         segment_seconds=rec.get("segment_seconds", 6),
         quality=rec.get("quality", "720p60,720p,best"),
