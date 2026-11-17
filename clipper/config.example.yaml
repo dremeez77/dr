@@ -84,5 +84,7 @@ streamers:
   - {name: Jynxzi,    platform: twitch, channel: jynxzi,     audience: en}
   - {name: KaiCenat,  platform: twitch, channel: kaicenat,   audience: en}
   - {name: Clix,      platform: twitch, channel: clix,       audience: en}
+  # ранний часовой пояс (Австралия): геймплей на часы раньше американцев
+  - {name: DarkViperAU, platform: twitch, channel: darkviperau, audience: en}
   - {name: IShowSpeed, platform: youtube, channel: "https://www.youtube.com/@IShowSpeed", audience: en,
      title_keywords: ["gta", "grand theft"]}
