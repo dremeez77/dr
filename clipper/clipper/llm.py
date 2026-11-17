@@ -21,7 +21,8 @@ Judge like a viewer scrolling a feed:
 - Strong: genuine funny reactions, rage, shock, chaos, fails, wins, unexpected events, memorable quotes, \
   first reactions to big story moments, interactions between streamers.
 - Weak: silence, menus, loading, reading donations, ads, talking about unrelated things, nothing happening.
-- Story spoilers are fine but mark them in the title only if the reaction is the point.
+- Story moments are fine to clip, but NEVER spoil in title or hook_text: describe the reaction, not the \
+  plot twist ("Kai was NOT ready for this ending", not what happens). Set spoiler=true for story reveals.
 
 Pick the best continuous segment of 12-58 seconds (start/end in seconds, relative to the fragment). \
 Start right before the setup (no long intro), end right after the payoff/reaction.
@@ -54,9 +55,10 @@ JUDGE_SCHEMA = {
         "reason": {"type": "string"},
         "event": {"type": "string"},
         "event_type": {"type": "string", "enum": ["story", "mission", "gameplay", "social", "other"]},
+        "spoiler": {"type": "boolean"},
     },
     "required": ["keep", "score", "start", "end", "title", "description", "hashtags", "hook_text", "reason",
-                 "event", "event_type"],
+                 "event", "event_type", "spoiler"],
     "additionalProperties": False,
 }
 
@@ -74,7 +76,7 @@ on the reaction. Total duration of all segments must be at most {max_seconds:.0f
 open with a strong hook, end with the biggest reaction.
 Viewer-facing text in {lang}: title (max 70 chars, e.g. "Streamers react to ..."), description (1-2 \
 sentences), hashtags (3-6, no '#', include gta6), hook_text (max 6 words, shown over the first segment). \
-Score 1-10 as for a big channel."""
+Never reveal plot twists in title or hook_text — tease the reaction instead. Score 1-10 as for a big channel."""
 
 GROUP_SCHEMA = {
     "type": "object",
@@ -140,6 +142,8 @@ Build the episode:
 - description: 2-4 sentences (chapters are appended automatically).
 - tags: 8-15 search tags. thumbnail_text: max 4 words, huge-font-friendly. thumbnail_clip_id and \
   thumbnail_at: the clip and source second whose frame works best as a thumbnail (peak reaction).
+- No story spoilers in title, thumbnail_text or chapter names (tease reactions, not plot reveals); context \
+  lines for story chapters should set up the scene without giving away the outcome.
 All viewer-facing text in {lang}."""
 
 DIGEST_SCHEMA = {

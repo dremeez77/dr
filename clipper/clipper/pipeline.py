@@ -74,6 +74,16 @@ class Pipeline:
     def by_key(self, k: str) -> Streamer | None:
         return next((st for st in self.s.streamers if self.key(st) == k), None)
 
+    def credits(self, names: list[str]) -> str:
+        """Строки «🎥 Стример — ссылка на канал»: кредит автору в каждом описании."""
+        out = []
+        for n in dict.fromkeys(names):
+            try:
+                out.append(f"🎥 {n} — {self.s.streamer(n).url}")
+            except KeyError:
+                out.append(f"🎥 {n}")
+        return "\n".join(out)
+
     # ---------- запуск ----------
     async def run(self):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
@@ -291,7 +301,11 @@ class Pipeline:
                 "src": str(src), "duration": duration, "window": [round(s, 1), round(e, 1)],
                 "facecam": vars(facecam) if facecam else None,
                 "words": [[round(w.start, 2), round(w.end, 2), w.text] for w in words]}
-        fields = dict(score=score, title=verdict["title"], description=verdict["description"],
+        description = verdict["description"]
+        if verdict.get("spoiler"):
+            description = ("⚠️ СПОЙЛЕР. " if st.audience == "ru" else "⚠️ SPOILER. ") + description
+        description += "\n\n" + self.credits([st.name])
+        fields = dict(score=score, title=verdict["title"], description=description,
                       hashtags=" ".join(verdict["hashtags"]), meta=meta)
         if pool:
             log.info("clip %s -> pool (%s/10): %s", job.clip_id, score, verdict["event"])
@@ -377,6 +391,7 @@ class Pipeline:
             out = self.s.data_dir / "out" / f"{cid}_compilation.mp4"
             await asyncio.to_thread(R.render_compilation, segs, out, self.s.render, g.get("hook_text", ""))
             hashtags = [h.lstrip("#").replace(" ", "") for h in g.get("hashtags", []) if h.strip()]
+            g["description"] = f"{g['description']}\n\n{self.credits([x.streamer for x in segs])}"
             self.db.update(cid, status="review", score=int(g["score"]), title=g["title"],
                            description=g["description"], hashtags=" ".join(hashtags), video_path=str(out),
                            meta={"clip_ids": ids, "event": g.get("event", "")})
@@ -409,8 +424,8 @@ class Pipeline:
             if is_digest:
                 desc, thumb = clip["description"], Path(clip["meta"].get("thumb", ""))
             else:
-                desc = f"{clip['description']}\n\n{clip['streamer']}\n" + " ".join("#" + t for t in tags)
-                tags, thumb = tags + [clip["streamer"]], None
+                desc = f"{clip['description']}\n\n" + " ".join("#" + t for t in tags)
+                tags, thumb = tags + clip["streamer"].split(" + "), None
             try:
                 vid = await asyncio.to_thread(upload, Path(token), Path(clip["video_path"]), clip["title"],
                                               desc, tags, self.s.youtube_privacy, False, not is_digest, thumb)
@@ -503,7 +518,7 @@ class Pipeline:
                                         float(plan.get("thumbnail_at", 0)), plan.get("thumbnail_text", ""),
                                         out.with_suffix(".jpg"), self.s.render)
         description = (f"{plan['description']}\n\n{D.chapters(segs)}\n\n"
-                       + " ".join(f"@{s}" for s in streamers) + "\n#gta6 #gtavi")
+                       + self.credits(streamers) + "\n\n#gta6 #gtavi")
         tags = [t.lstrip("#") for t in plan.get("tags", [])][:15]
         total = R.probe_duration(out)
         self.db.update(cid, status="review", score=10, title=plan["title"][:100], description=description,
