@@ -16,7 +16,8 @@ def authorize(client_secrets: Path, token_out: Path):
 
 
 def upload(token_file: Path, video: Path, title: str, description: str, tags: list[str],
-           privacy: str = "public", made_for_kids: bool = False) -> str:
+           privacy: str = "public", made_for_kids: bool = False, shorts: bool = True,
+           thumbnail: Path | None = None) -> str:
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
@@ -27,7 +28,7 @@ def upload(token_file: Path, video: Path, title: str, description: str, tags: li
         creds.refresh(Request())
         token_file.write_text(creds.to_json())
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
-    if "#shorts" not in title.lower() and len(title) <= 90:
+    if shorts and "#shorts" not in title.lower() and len(title) <= 90:
         title = f"{title} #shorts"
     body = {
         "snippet": {"title": title[:100], "description": description[:4900], "tags": tags[:15],
@@ -35,8 +36,13 @@ def upload(token_file: Path, video: Path, title: str, description: str, tags: li
         "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": made_for_kids},
     }
     req = yt.videos().insert(part="snippet,status", body=body,
-                             media_body=MediaFileUpload(str(video), chunksize=-1, resumable=True))
+                             media_body=MediaFileUpload(str(video), chunksize=8 * 1024 * 1024, resumable=True))
     resp = None
     while resp is None:
         _, resp = req.next_chunk()
+    if thumbnail and thumbnail.exists():
+        try:  # свои превью доступны только подтверждённым по телефону каналам
+            yt.thumbnails().set(videoId=resp["id"], media_body=MediaFileUpload(str(thumbnail))).execute()
+        except Exception:  # noqa: BLE001
+            pass
     return resp["id"]

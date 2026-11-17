@@ -38,7 +38,7 @@ def chunk_words(words: list[Word], max_words: int = 3, max_gap: float = 0.6) -> 
 
 
 def build_ass(words: list[Word], cfg: RenderCfg, hook_text: str = "", hook_seconds: float = 3.0,
-              label: str = "", duration: float = 0.0) -> str:
+              label: str = "", duration: float = 0.0, context: str = "", context_seconds: float = 5.0) -> str:
     """ASS-субтитры: фразы по 1-3 слова, текущее слово подсвечено жёлтым.
 
     Время слов — относительно начала клипа.
@@ -54,6 +54,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Sub,{cfg.font},{cfg.font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,60,60,{cfg.subs_margin_v},1
 Style: Hook,{cfg.font},{int(cfg.font_size * 0.8)},&H00000000,&H00000000,&H0000E5FF,&H0000E5FF,-1,0,0,0,100,100,0,0,3,18,0,8,80,80,140,1
 Style: Label,{cfg.font},{int(cfg.font_size * 0.55)},&H00FFFFFF,&H00FFFFFF,&H60000000,&H60000000,-1,0,0,0,100,100,0,0,3,12,0,7,40,40,40,1
+Style: Context,{cfg.font},{int(cfg.font_size * 0.6)},&H00FFFFFF,&H00FFFFFF,&H50000000,&H50000000,0,0,0,0,100,100,0,0,3,14,0,8,120,120,{140 + int(cfg.font_size * 0.8) + 70},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -64,6 +65,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         lines.append(f"Dialogue: 2,{_ts(0)},{_ts(end)},Label,,0,0,0,,{_esc(label)}")
     if hook_text:
         lines.append(f"Dialogue: 1,{_ts(0)},{_ts(hook_seconds)},Hook,,0,0,0,,{_esc(hook_text.upper())}")
+    if context:
+        lines.append(f"Dialogue: 1,{_ts(0)},{_ts(context_seconds)},Context,,0,0,0,,{_esc(context)}")
     for chunk in chunk_words(words):
         for i, w in enumerate(chunk):
             end = chunk[i + 1].start if i + 1 < len(chunk) else w.end
@@ -151,6 +154,110 @@ def render_compilation(segments: list[Segment], out: Path, cfg: RenderCfg, hook_
     finally:
         for p in parts:
             p.unlink(missing_ok=True)
+    return out
+
+
+# ---------- горизонтальный дайджест 16:9 ----------
+LANDSCAPE = RenderCfg(width=1920, height=1080, font_size=56, subs_margin_v=60)
+_ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "160k",
+        "-ar", "48000", "-ac", "2"]
+
+
+def _landscape_cfg(cfg: RenderCfg) -> RenderCfg:
+    return RenderCfg(**{**vars(LANDSCAPE), "font": cfg.font, "crf": cfg.crf, "preset": cfg.preset,
+                        "loudnorm": cfg.loudnorm})
+
+
+def render_landscape(src: Path, out: Path, start: float, duration: float, words: list[Word], cfg: RenderCfg,
+                     label: str = "", chapter: str = "", context: str = "") -> Path:
+    lc = _landscape_cfg(cfg)
+    ass = out.parent / (out.stem + ".ass")
+    ass.write_text(build_ass(words, lc, chapter, 4.0, label=label, duration=duration, context=context),
+                   encoding="utf-8")
+    vf = (f"scale={lc.width}:{lc.height}:force_original_aspect_ratio=decrease,"
+          f"pad={lc.width}:{lc.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,ass={ass.name}")
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{start:.3f}", "-i", str(src.resolve()),
+           "-t", f"{duration:.3f}", "-vf", vf, "-map", "0:v:0", "-map", "0:a:0?",
+           "-preset", lc.preset, "-crf", str(lc.crf), *_ENC]
+    if lc.loudnorm:
+        cmd += ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
+    subprocess.run(cmd + [str(out.resolve())], check=True, cwd=out.parent)
+    ass.unlink(missing_ok=True)
+    return out
+
+
+def render_title_card(out: Path, title: str, subtitle: str, cfg: RenderCfg, seconds: float = 3.0) -> Path:
+    """Интро: тёмный фон, крупный заголовок. Тишина в аудио — чтобы склейка шла без перекодирования."""
+    lc = _landscape_cfg(cfg)
+    ass = out.parent / (out.stem + ".ass")
+    ass.write_text(f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {lc.width}
+PlayResY: {lc.height}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: T,{lc.font},96,&H0000E5FF,&H0000E5FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,5,120,120,0,1
+Style: S,{lc.font},48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,3,0,2,120,120,220,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,{_ts(0)},{_ts(seconds)},T,,0,0,0,,{{\\fad(200,200)}}{_esc(title.upper())}
+Dialogue: 0,{_ts(0)},{_ts(seconds)},S,,0,0,0,,{{\\fad(200,200)}}{_esc(subtitle)}
+""", encoding="utf-8")
+    subprocess.run([
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", f"color=c=0x101018:s={lc.width}x{lc.height}:r=30:d={seconds}",
+        "-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo:d={seconds}",
+        "-vf", f"ass={ass.name}", "-shortest", "-preset", lc.preset, "-crf", str(lc.crf), *_ENC,
+        str(out.resolve())], check=True, cwd=out.parent)
+    ass.unlink(missing_ok=True)
+    return out
+
+
+def render_digest(segments: list, out: Path, cfg: RenderCfg, title: str, subtitle: str) -> Path:
+    """segments: DigestSegment (время — в секундах исходника)."""
+    parts = []
+    try:
+        parts.append(render_title_card(out.parent / f"{out.stem}_intro.mp4", title, subtitle, cfg))
+        for i, seg in enumerate(segments):
+            part = out.parent / f"{out.stem}_p{i}.mp4"
+            rel = [Word(w.start - seg.start, w.end - seg.start, w.text)
+                   for w in seg.words if w.end > seg.start and w.start < seg.end]
+            render_landscape(seg.src, part, seg.start, seg.end - seg.start, rel, cfg,
+                             label=f"@{seg.streamer}", chapter=seg.chapter, context=seg.context)
+            parts.append(part)
+        lst = out.with_suffix(".txt")
+        lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0",
+                        "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out)], check=True)
+        lst.unlink(missing_ok=True)
+    finally:
+        for p in parts:
+            p.unlink(missing_ok=True)
+    return out
+
+
+def make_thumbnail(src: Path, at: float, text: str, out: Path, cfg: RenderCfg) -> Path:
+    ass = out.parent / (out.stem + ".ass")
+    ass.write_text(f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Th,{cfg.font},120,&H0000E5FF,&H0000E5FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,10,4,1,50,50,40,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:10.00,Th,,0,0,0,,{_esc(text.upper())}
+""", encoding="utf-8")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{max(at, 0):.2f}",
+                    "-i", str(src.resolve()), "-frames:v", "1",
+                    "-vf", f"scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,eq=saturation=1.3:contrast=1.1,ass={ass.name}",
+                    "-q:v", "2", str(out.resolve())], check=True, cwd=out.parent)
+    ass.unlink(missing_ok=True)
     return out
 
 

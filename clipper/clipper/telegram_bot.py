@@ -62,6 +62,19 @@ class TelegramBot:
             return None
         return d["result"]["message_id"]
 
+    async def send_photo(self, chat_id: str, photo: Path, caption: str, clip_id: int, youtube: bool) -> int | None:
+        form = aiohttp.FormData()
+        form.add_field("chat_id", str(chat_id))
+        form.add_field("caption", caption[:1024])
+        form.add_field("reply_markup", json.dumps(self.keyboard(clip_id, youtube)))
+        form.add_field("photo", photo.open("rb"), filename=photo.name, content_type="image/jpeg")
+        async with self.session.post(f"{self.api}/sendPhoto", data=form) as r:
+            d = await r.json()
+        if not d.get("ok"):
+            log.warning("sendPhoto failed: %s", d)
+            return None
+        return d["result"]["message_id"]
+
     async def run(self):
         offset = 0
         while True:
@@ -90,7 +103,7 @@ class TelegramBot:
             caption = (msg.get("caption") or msg.get("text") or "")
             edit = {"chat_id": chat_id, "message_id": msg.get("message_id"),
                     "reply_markup": {"inline_keyboard": []}}
-            if "video" in msg:
+            if "video" in msg or "photo" in msg:
                 await self._call("editMessageCaption", caption=f"{caption}\n\n➡️ {status}"[:1024], **edit)
             else:
                 await self._call("editMessageText", text=f"{caption}\n\n➡️ {status}"[:4000], **edit)

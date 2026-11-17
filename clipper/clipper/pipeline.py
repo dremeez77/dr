@@ -9,7 +9,11 @@ from pathlib import Path
 
 import aiohttp
 
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
 from . import compilation as C
+from . import digest as D
 from . import render as R
 from .chat import TwitchChat, YouTubeChat
 from .config import Facecam, Settings, Streamer
@@ -79,6 +83,8 @@ class Pipeline:
             tasks = [self._live_loop(), self._clips_loop(), self.chat.run(), self._cleanup_loop()]
             if self.s.comp.enabled:
                 tasks.append(self._compilations_loop())
+            if self.s.digest.enabled:
+                tasks.append(self._digest_loop())
             if self.s.telegram_token:
                 self.bot = TelegramBot(self.s.telegram_token, session)
                 self.bot.on_action = self.on_action
@@ -399,15 +405,20 @@ class Pipeline:
             if not token:
                 return "Нет YouTube-токена для этой аудитории"
             tags = (clip["hashtags"] or "").split()
-            desc = f"{clip['description']}\n\n{clip['streamer']}\n" + " ".join("#" + t for t in tags)
+            is_digest = clip["source"] == "digest"
+            if is_digest:
+                desc, thumb = clip["description"], Path(clip["meta"].get("thumb", ""))
+            else:
+                desc = f"{clip['description']}\n\n{clip['streamer']}\n" + " ".join("#" + t for t in tags)
+                tags, thumb = tags + [clip["streamer"]], None
             try:
                 vid = await asyncio.to_thread(upload, Path(token), Path(clip["video_path"]), clip["title"],
-                                              desc, tags + [clip["streamer"]], self.s.youtube_privacy)
+                                              desc, tags, self.s.youtube_privacy, False, not is_digest, thumb)
             except Exception as e:  # noqa: BLE001
                 log.exception("youtube upload failed")
                 return f"Ошибка загрузки: {e}"[:180]
             self.db.update(clip_id, status="published", youtube_id=vid)
-            return f"Опубликовано: https://youtube.com/shorts/{vid}"
+            return f"Опубликовано: https://youtu.be/{vid}"
         return "Неизвестное действие"
 
     async def on_command(self, cmd: str) -> str:
@@ -425,12 +436,87 @@ class Pipeline:
             return (f"{'⏸ ПАУЗА' if self.paused else '▶️ Работаю'}\nВ эфире с GTA: {live}\n"
                     f"Пишу: {rec}\nОчередь: {self.queue.qsize()}\nЗа 24ч: {stats}")
         if cmd == "/compile":
-            self._comp_seen.clear()
-            made = 0
-            for aud in sorted({st.audience for st in self.s.streamers}):
-                made += await self.make_compilations(aud)
-            return f"🧩 Собрано подборок: {made}"
-        return "Команды: /status, /pause, /resume, /compile"
+            async def compile_all():
+                self._comp_seen.clear()
+                made = 0
+                for aud in sorted({st.audience for st in self.s.streamers}):
+                    made += await self.make_compilations(aud)
+                await self.notify_all(f"🧩 Собрано подборок: {made}")
+            asyncio.get_running_loop().create_task(compile_all())
+            return "🧩 Ищу совпадения и собираю подборки…"
+        if cmd == "/digest":
+            async def digest_all():
+                for aud in self.s.digest.audiences:
+                    try:
+                        if not await self.make_digest(aud, force=True):
+                            await self.notify_all(f"📼 Дайджест [{aud}]: мало материала")
+                    except Exception as e:  # noqa: BLE001
+                        log.exception("digest failed")
+                        await self.notify_all(f"📼 Дайджест [{aud}] упал: {e}"[:300])
+            asyncio.get_running_loop().create_task(digest_all())
+            return "📼 Собираю дайджест, пришлю превью, когда будет готов (несколько минут)…"
+        return "Команды: /status, /pause, /resume, /compile, /digest"
+
+    # ---------- ежедневный дайджест ----------
+    async def _digest_loop(self):
+        d = self.s.digest
+        while True:
+            now = datetime.now(timezone.utc)
+            target = D.next_run(now, d.hour, d.minute, d.timezone)
+            log.info("next digest at %s", target.isoformat())
+            await asyncio.sleep((target - now).total_seconds())
+            for aud in d.audiences:
+                try:
+                    res = await self.make_digest(aud)
+                    if not res:
+                        await self.notify_all(f"📼 Дайджест [{aud}] не собран: мало материала за сутки")
+                except Exception as e:  # noqa: BLE001
+                    log.exception("digest %s failed: %s", aud, e)
+            await asyncio.sleep(60)
+
+    async def make_digest(self, audience: str, force: bool = False) -> int | None:
+        d = self.s.digest
+        day = datetime.now(ZoneInfo(d.timezone)).strftime("%Y-%m-%d")
+        clips = D.candidates(self.db.recent(audience, time.time() - d.lookback_hours * 3600, D.DIGEST_STATUSES),
+                             d.max_candidates)
+        if len(clips) < d.min_segments:
+            return None
+        plan = await asyncio.to_thread(self.claude.digest, audience, D.payload(clips), d.min_segments,
+                                       d.target_minutes, d.max_minutes)
+        if not plan:
+            return None
+        by_id = {c["id"]: c for c in clips}
+        segs = D.validate(plan, by_id, d.min_segments, d.max_minutes)
+        if not segs:
+            log.info("digest %s: plan rejected (too few valid segments)", audience)
+            return None
+        key = f"digest:{audience}:{day}" + (f":{int(time.time())}" if force else "")
+        streamers = sorted({s.streamer for s in segs})
+        cid = self.db.create(key, "Digest", audience, "digest", time.time(), {"clip_ids": [s.clip_id for s in segs]})
+        if cid is None:
+            return None  # сегодня уже собирали
+        out = self.s.data_dir / "out" / f"{cid}_digest_{audience}_{day}.mp4"
+        subtitle = ", ".join(streamers[:6]) + (" …" if len(streamers) > 6 else "")
+        await asyncio.to_thread(R.render_digest, segs, out, self.s.render, plan["title"], subtitle)
+        thumb_clip = by_id.get(plan.get("thumbnail_clip_id")) or by_id[segs[0].clip_id]
+        thumb = await asyncio.to_thread(R.make_thumbnail, Path(thumb_clip["meta"]["src"]),
+                                        float(plan.get("thumbnail_at", 0)), plan.get("thumbnail_text", ""),
+                                        out.with_suffix(".jpg"), self.s.render)
+        description = (f"{plan['description']}\n\n{D.chapters(segs)}\n\n"
+                       + " ".join(f"@{s}" for s in streamers) + "\n#gta6 #gtavi")
+        tags = [t.lstrip("#") for t in plan.get("tags", [])][:15]
+        total = R.probe_duration(out)
+        self.db.update(cid, status="review", score=10, title=plan["title"][:100], description=description,
+                       hashtags=" ".join(tags), video_path=str(out),
+                       meta={"clip_ids": [s.clip_id for s in segs], "thumb": str(thumb), "duration": total})
+        log.info("digest %s ready: %s (%.0fs, %d segments)", audience, out, total, len(segs))
+        if self.bot and self.s.chat_for(audience):
+            caption = (f"📼 Дайджест · {audience.upper()} · {D.fmt_ts(total)} · {len(segs)} моментов\n\n"
+                       f"{plan['title']}\n\n{description}")
+            mid = await self.bot.send_photo(self.s.chat_for(audience), thumb, caption, cid,
+                                            bool(self.s.youtube_tokens.get(audience)))
+            self.db.update(cid, tg_message_id=mid)
+        return cid
 
     # ---------- уборка ----------
     async def _cleanup_loop(self):

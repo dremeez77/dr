@@ -74,6 +74,21 @@ class CompCfg:
 
 
 @dataclass
+class DigestCfg:
+    """Ежедневный длинный ролик «Главное за день» (16:9, для монетизации)."""
+    enabled: bool = True
+    audiences: list[str] = field(default_factory=lambda: ["en"])
+    hour: int = 23
+    minute: int = 0
+    timezone: str = "Europe/Moscow"
+    lookback_hours: int = 24
+    min_segments: int = 6
+    target_minutes: float = 10.0
+    max_minutes: float = 15.0
+    max_candidates: int = 80
+
+
+@dataclass
 class Settings:
     data_dir: Path
     game_names: list[str]
@@ -81,6 +96,7 @@ class Settings:
     detector: DetectorCfg
     render: RenderCfg
     comp: CompCfg = field(default_factory=CompCfg)
+    digest: DigestCfg = field(default_factory=DigestCfg)
     buffer_minutes: int = 8
     segment_seconds: int = 6
     quality: str = "720p60,720p,best"
@@ -147,6 +163,7 @@ def load(path: str | Path) -> Settings:
         detector=DetectorCfg(**raw.get("detector", {})),
         render=RenderCfg(**raw.get("render", {})),
         comp=CompCfg(**raw.get("compilations", {})),
+        digest=DigestCfg(**raw.get("digest", {})),
         buffer_minutes=rec.get("buffer_minutes", 8),
         segment_seconds=rec.get("segment_seconds", 6),
         quality=rec.get("quality", "720p60,720p,best"),

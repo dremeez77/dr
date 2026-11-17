@@ -52,6 +52,17 @@ compilations:            # «N стримеров реагируют на оди
   max_seconds: 58        # для Shorts; для TikTok Creator Rewards можно 90
   min_pool_score: 4      # слабые сюжетные моменты не выкидываем, а копим для подборок
 
+digest:                  # ежедневный длинный ролик 16:9 «Главное за день»
+  enabled: true
+  audiences: ["en"]      # можно ["en", "ru"]
+  hour: 23               # когда собирать (локальное время ниже)
+  minute: 0
+  timezone: Europe/Moscow
+  lookback_hours: 24
+  min_segments: 6
+  target_minutes: 10     # 8+ минут — можно ставить mid-roll рекламу
+  max_minutes: 15
+
 render:
   cam_ratio: 0.38        # доля высоты под вебку
   font: "DejaVu Sans"

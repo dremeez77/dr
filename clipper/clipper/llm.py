@@ -124,6 +124,54 @@ FACECAM_SCHEMA = {
     "additionalProperties": False,
 }
 
+DIGEST_SYSTEM = """You are the showrunner of a daily long-form YouTube video "GTA 6 on stream: the best of the \
+day". You get today's candidate moments from many streamers (event tag, score, suggested window, timestamped \
+transcript; times are seconds in each clip's source file).
+
+Build the episode:
+- Pick {min_segments}+ segments, total about {target_minutes:.0f} minutes (hard max {max_minutes:.0f}). Each \
+  segment 10-90s, one per clip, start/end in that clip's source seconds. Prefer the strongest, most varied moments; \
+  avoid two segments about the same event unless they show contrasting reactions back to back.
+- Order for retention: very strong cold open first, keep variety (story / chaos / funny), save one of the best \
+  for the end. Group same-event reactions next to each other.
+- chapter: short chapter title (max 45 chars). context: one sentence (max 120 chars) a viewer needs to get the \
+  moment — this is editorial value we add, write it like a host, not a summary of the transcript.
+- title: max 90 chars, compelling and honest, mention the biggest streamers/moments.
+- description: 2-4 sentences (chapters are appended automatically).
+- tags: 8-15 search tags. thumbnail_text: max 4 words, huge-font-friendly. thumbnail_clip_id and \
+  thumbnail_at: the clip and source second whose frame works best as a thumbnail (peak reaction).
+All viewer-facing text in {lang}."""
+
+DIGEST_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "thumbnail_text": {"type": "string"},
+        "thumbnail_clip_id": {"type": "integer"},
+        "thumbnail_at": {"type": "number"},
+        "segments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "clip_id": {"type": "integer"},
+                    "start": {"type": "number"},
+                    "end": {"type": "number"},
+                    "chapter": {"type": "string"},
+                    "context": {"type": "string"},
+                },
+                "required": ["clip_id", "start", "end", "chapter", "context"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["title", "description", "tags", "thumbnail_text", "thumbnail_clip_id", "thumbnail_at",
+                 "segments"],
+    "additionalProperties": False,
+}
+
 LANG_NAMES = {"ru": "Russian", "en": "English"}
 
 
@@ -196,6 +244,13 @@ class Claude:
         content = "Candidate clips:\n" + json.dumps(candidates, ensure_ascii=False, indent=1)
         data = self._json(system, content, GROUP_SCHEMA, 16000)
         return data.get("groups", []) if data else []
+
+    def digest(self, audience: str, candidates: list[dict], min_segments: int, target_minutes: float,
+               max_minutes: float) -> dict | None:
+        system = DIGEST_SYSTEM.format(min_segments=min_segments, target_minutes=target_minutes,
+                                      max_minutes=max_minutes, lang=LANG_NAMES.get(audience, audience))
+        content = "Today's candidate moments:\n" + json.dumps(candidates, ensure_ascii=False, indent=1)
+        return self._json(system, content, DIGEST_SCHEMA, 16000)
 
     def find_facecam(self, frame: Path) -> Facecam | None:
         img = base64.standard_b64encode(frame.read_bytes()).decode()
