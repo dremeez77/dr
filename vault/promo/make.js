@@ -84,7 +84,7 @@ const qrBlock = URL_
   ? `<div style="background:#fff;padding:1.2vw;border-radius:1.4vw;width:22vw">${qrSvg(URL_ + '/')}</div>
      <div class="mono" style="font-weight:700;font-size:2.5vw;margin-top:1.6vw;color:${GOLD}">${URL_.replace(/^https?:\/\//, '')}</div>`
   : `<div style="width:22vw;height:22vw;border:.3vw dashed ${MUTED};border-radius:1.4vw;display:flex;align-items:center;justify-content:center;text-align:center;color:${MUTED};font:600 1.9vw/1.4 'JetBrains Mono',monospace;padding:2vw">ЗДЕСЬ БУДЕТ QR<br>запусти с --url</div>`;
-const sched = [['ПН 23.11', '20:00', 'Замок №1'], ['ВТ 24.11', '20:00', 'Замок №2'], ['СР 25.11', '12:00', 'Замок №3'], ['ЧТ 26.11', '20:00', 'Замок №4'], ['ПТ 27.11', 'финал', 'Хранилище откроют']];
+const sched = [['ПН 23.11', '20:00', 'Замок №1'], ['ВТ 24.11', '20:00', 'Замок №2'], ['СР 25.11', '20:00', 'Замок №3'], ['ЧТ 26.11', 'днём', 'Замок №4'], ['ПТ 27.11', 'финал', 'Хранилище откроют']];
 const POSTER = `<div class="page">
   <div class="top"><span>ХРАНИЛИЩЕ</span><span>23–27.11</span></div>
   <div style="display:flex;gap:5vw;align-items:center;margin-top:5vw">
