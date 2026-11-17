@@ -110,22 +110,23 @@ const doc = body => `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 // ---------- Приглашение для преподавателей (A5) ----------
 const INVITE_URL = URL_ || 'https://hranilischespbgau.ru';
 const INVITE = `<div class="page" style="padding:7vw 8vw">
-  <div class="top"><span>ХРАНИЛИЩЕ</span><span>ПРИГЛАШЕНИЕ</span></div>
-  <div style="display:flex;gap:4vw;align-items:center;margin-top:4.5vw">
-    <div class="emb" style="width:14vw;height:14vw;flex:none">${emblem(GOLD, 5)}</div>
+  <div class="top"><span>СПбГАУ</span><span>ПРИГЛАШЕНИЕ</span></div>
+  <div style="display:flex;gap:4vw;align-items:center;margin-top:3.5vw">
+    <div class="emb" style="width:12vw;height:12vw;flex:none">${emblem(GOLD, 5)}</div>
     <div style="font:700 2.3vw/1.3 'JetBrains Mono',monospace;letter-spacing:.14em;color:${MUTED}">НЕДЕЛЯ ФИНАНСОВОЙ<br>ГРАМОТНОСТИ СПбГАУ<br>23–27 НОЯБРЯ</div>
   </div>
-  <h1 style="font-size:8.6vw;margin-top:4.5vw">Приглашаем<br><span class="gold">вас в игру.</span></h1>
-  <p style="font:500 3.1vw/1.42 Inter,sans-serif;color:#d5def3;margin:3vw 0 0">Открытие Недели финансовой грамотности — не лекция. Будет шоу, после которого банк ВТБ запрёт приз в хранилище, а студенты пять дней будут подбирать к нему код.</p>
-  <p style="font:700 3.1vw/1.42 Inter,sans-serif;margin:2.4vw 0 0">Вы можете играть тоже — <span class="gold">против студентов.</span></p>
-  <div style="margin-top:3.5vw;border-top:.25vw solid #1d2f73">
-    ${[['23.11', 'Открытие · актовый зал'], ['24–27.11', 'Загадки на сайте, разминки по финансам'], ['25.11', 'Дебаты «Копить, инвестировать или брать в долг?»'], ['26.11', 'Ликбез по кредитам и игра «Сделка»'], ['27.11', 'Финал, суперигра и награждение']].map(([d, t]) =>
-      `<div style="display:flex;gap:3vw;padding:1.3vw 0;border-bottom:.25vw solid #1d2f73;font:600 2.7vw/1.3 Inter,sans-serif"><span style="width:17vw;flex:none;font-family:'JetBrains Mono',monospace;color:${GOLD}">${d}</span><span>${t}</span></div>`).join('')}
+  <h1 style="font-size:9vw;margin-top:3.5vw">Приглашаем <span class="gold">вас</span></h1>
+  <p style="font:700 3.6vw/1.3 Inter,sans-serif;margin:1vw 0 0">на открытие Недели финансовой грамотности СПбГАУ</p>
+  <p style="font:500 2.75vw/1.4 Inter,sans-serif;color:#d5def3;margin:2.2vw 0 0">Мы, студенты СПбГАУ, при поддержке банка ВТБ подготовили неделю о деньгах, кредитах и финансовой безопасности. Открытие пройдёт 23 ноября в актовом зале: короткое шоу и выступление представителя банка ВТБ.</p>
+  <p style="font:600 2.75vw/1.4 Inter,sans-serif;margin:1.8vw 0 0">Будем рады видеть вас на открытии и на всех мероприятиях недели.</p>
+  <div style="margin-top:2.8vw;border-top:.25vw solid #1d2f73">
+    ${[['23.11', 'Открытие · актовый зал'], ['23–26.11', 'Игра «Хранилище»: загадки на сайте'], ['25.11', 'Дебаты «Копить, инвестировать или в долг?»'], ['26.11', 'Ликбез по кредитам и игра «Сделка»'], ['27.11', 'Финал, суперигра и награждение']].map(([d, t]) =>
+      `<div style="display:flex;gap:3vw;padding:1.1vw 0;border-bottom:.25vw solid #1d2f73;font:600 2.5vw/1.3 Inter,sans-serif"><span style="width:17vw;flex:none;font-family:'JetBrains Mono',monospace;color:${GOLD}">${d}</span><span>${t}</span></div>`).join('')}
   </div>
   <div class="foot" style="align-items:center">
     <div style="background:#fff;padding:1.2vw;border-radius:1.6vw;width:19vw;flex:none">${qrSvg(INVITE_URL + '/')}</div>
-    <div style="font:500 2.4vw/1.42 Inter,sans-serif;color:#d5def3">
-      Войдите через ВКонтакте и отметьте <b style="color:#fff">«Я преподаватель»</b>. У преподавателей свой зачёт и своя команда в рейтинге групп.
+    <div style="font:500 2.2vw/1.4 Inter,sans-serif;color:#d5def3">
+      Всю неделю идёт игра с загадками. Преподаватели играют в ней отдельной командой: войдите через ВКонтакте и отметьте <b style="color:#fff">«Я преподаватель»</b>.
       <div class="mono" style="margin-top:1.6vw;color:${GOLD};font-weight:700;font-size:2.4vw">${INVITE_URL.replace(/^https?:\/\//, '')}</div>
       <div style="margin-top:1.2vw;color:${MUTED};font-size:2vw">При поддержке банка ВТБ</div>
     </div>
