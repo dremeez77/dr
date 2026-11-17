@@ -414,6 +414,81 @@ route('POST', /^\/api\/story\/control$/, async ctx => {
   return { phase: story.phase, scene: story.scene };
 });
 
+// --- Квиз на телефонах (пятница) ---
+// Вопросы — в quiz.json. Игроки входят по имени, без ВКонтакте. Состояние хранится в kv, чтобы пережить перезапуск.
+const QUIZ = JSON.parse(fs.readFileSync(path.join(__dirname, 'quiz.json'), 'utf8'));
+const quizFresh = () => ({ phase: 'idle', idx: -1, endsAt: 0, startedAt: 0, players: {}, answers: {} });
+let quiz = parse(kvGet('quiz'), null) || quizFresh();
+let quizDirty = false;
+const saveQuiz = () => { quizDirty = true; };
+setInterval(() => { if (quizDirty) { quizDirty = false; kvSet('quiz', JSON.stringify(quiz)); } }, 1000).unref();
+const QUIZ_MS = (QUIZ.seconds || 20) * 1000;
+const quizTop = n => Object.entries(quiz.players).map(([id, p]) => ({ id, name: p.name, score: p.score }))
+  .sort((a, b) => b.score - a.score).slice(0, n).map((p, i) => ({ rank: i + 1, ...p }));
+function quizCounts() {
+  const q = QUIZ.questions[quiz.idx]; const c = q ? q.a.map(() => 0) : [];
+  for (const v of Object.values(quiz.answers)) if (c[v.choice] !== undefined) c[v.choice]++;
+  return c;
+}
+
+route('GET', /^\/api\/quiz$/, ctx => {
+  let qid = ctx.cookies.qid;
+  if (!qid) { qid = rand(10); setCookie(ctx.res, 'qid', qid, 60 * 60 * 12); }
+  const me = quiz.players[qid] || null, q = QUIZ.questions[quiz.idx] || null;
+  const out = { phase: quiz.phase, idx: quiz.idx, total: QUIZ.questions.length, now: now(), endsAt: quiz.endsAt,
+    players: Object.keys(quiz.players).length, answered: Object.keys(quiz.answers).length, title: QUIZ.title,
+    me: me && { name: me.name, score: me.score, rank: quizTop(1e6).find(p => p.id === qid)?.rank || null } };
+  if (q && (quiz.phase === 'question' || quiz.phase === 'reveal')) {
+    Object.assign(out, { round: q.round, q: q.q, a: q.a, my: quiz.answers[qid] || null });
+    if (quiz.phase === 'reveal') Object.assign(out, { correct: q.correct, note: q.note || '', counts: quizCounts(), top: quizTop(5) });
+  }
+  if (quiz.phase === 'final') out.top = quizTop(10);
+  return out;
+});
+
+route('POST', /^\/api\/quiz\/join$/, async ctx => {
+  rateLimit('qjoin:' + ctx.ip, 600, 60000);
+  const { name } = await ctx.body();
+  const n = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+  if (n.length < 2) fail(400, 'Имя: хотя бы 2 символа');
+  if (!ctx.cookies.qid) fail(400, 'Обнови страницу');
+  if (!quiz.players[ctx.cookies.qid]) quiz.players[ctx.cookies.qid] = { name: n, score: 0 };
+  else quiz.players[ctx.cookies.qid].name = n;
+  saveQuiz();
+  return { ok: true };
+});
+
+route('POST', /^\/api\/quiz\/answer$/, async ctx => {
+  const { choice } = await ctx.body();
+  const qid = ctx.cookies.qid, p = qid && quiz.players[qid], q = QUIZ.questions[quiz.idx];
+  if (!p) fail(400, 'Сначала введи имя');
+  if (quiz.phase !== 'question' || !q) fail(409, 'Сейчас нет вопроса');
+  const t = now();
+  if (t > quiz.endsAt) fail(409, 'Время вышло');
+  if (quiz.answers[qid]) fail(409, 'Ответ уже принят');
+  if (!Number.isInteger(choice) || !q.a[choice]) fail(400, 'Нет такого варианта');
+  // За верный ответ 500 баллов и ещё до 500 за скорость.
+  const pts = choice === q.correct ? 500 + Math.round(500 * Math.max(0, quiz.endsAt - t) / QUIZ_MS) : 0;
+  quiz.answers[qid] = { choice, pts };
+  p.score += pts;
+  saveQuiz();
+  return { ok: true, choice };
+});
+
+route('POST', /^\/api\/quiz\/control$/, async ctx => {
+  requireAdmin(ctx);
+  const { action } = await ctx.body();
+  if (action === 'reset') quiz = quizFresh();
+  else if (action === 'next') {
+    if (quiz.phase === 'question') quiz.phase = 'reveal';
+    else if (quiz.phase === 'final') { /* конец */ }
+    else if (quiz.idx + 1 >= QUIZ.questions.length) quiz.phase = 'final';
+    else { quiz.idx++; quiz.phase = 'question'; quiz.answers = {}; quiz.startedAt = now(); quiz.endsAt = now() + QUIZ_MS; }
+  } else fail(400, 'Неизвестная команда');
+  saveQuiz();
+  return { phase: quiz.phase, idx: quiz.idx };
+});
+
 // --- Админка ---
 route('POST', /^\/api\/admin\/login$/, async ctx => {
   rateLimit('adm:' + ctx.ip, 8, 60000);
@@ -581,7 +656,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html' };
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));

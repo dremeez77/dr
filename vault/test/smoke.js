@@ -183,6 +183,33 @@ function client(base) {
   assert.match(sent.pop(), /пришли мне код/, 'обычное сообщение без проверки');
   bots.vk = realVk;
 
+  // --- квиз ---
+  const qa = client(base), qb = client(base);
+  await qa('/api/quiz'); await qb('/api/quiz');
+  assert.equal((await qa('/api/quiz/answer', { choice: 0 })).status, 400, 'без имени нельзя');
+  await qa('/api/quiz/join', { name: 'Аня Ф-21' }); await qb('/api/quiz/join', { name: 'Боря' });
+  assert.equal((await qa('/api/quiz/control', { action: 'next' })).status, 401);
+  await admin('/api/quiz/control', { action: 'reset' });
+  await qa('/api/quiz/join', { name: 'Аня Ф-21' }); await qb('/api/quiz/join', { name: 'Боря' });
+  await admin('/api/quiz/control', { action: 'next' });
+  let qst = (await qa('/api/quiz')).body;
+  assert.equal(qst.phase, 'question'); assert.equal(qst.correct, undefined, 'правильный ответ скрыт до раскрытия');
+  const qok = await qa('/api/quiz/answer', { choice: 0 });
+  assert.equal(qok.status, 200);
+  assert.equal((await qa('/api/quiz/answer', { choice: 1 })).status, 409, 'второй ответ нельзя');
+  await qb('/api/quiz/answer', { choice: 1 });
+  await admin('/api/quiz/control', { action: 'next' });
+  qst = (await qa('/api/quiz')).body;
+  assert.equal(qst.phase, 'reveal'); assert.equal(qst.correct, 0);
+  assert.ok(qst.me.score > 900, 'быстрый верный ответ ~1000: ' + qst.me.score);
+  assert.equal((await qb('/api/quiz')).body.me.score, 0);
+  assert.deepEqual(qst.counts.slice(0, 2), [1, 1]);
+  assert.equal((await qb('/api/quiz/answer', { choice: 0 })).status, 409, 'после раскрытия ответы закрыты');
+  for (let i = 0; i < 40; i++) await admin('/api/quiz/control', { action: 'next' });
+  qst = (await qa('/api/quiz')).body;
+  assert.equal(qst.phase, 'final'); assert.equal(qst.top[0].name, 'Аня Ф-21');
+  await admin('/api/quiz/control', { action: 'reset' });
+
   // --- конец игры ---
   await admin('/api/admin/puzzle', { num: 3, title: 'Тайна 3', body: 'x', opens_at: t - 1000, answers: ['да'], hints: [], published: true });
   await admin('/api/admin/settings', { ends_at: Date.now() - 1 });
