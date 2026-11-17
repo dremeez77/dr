@@ -365,7 +365,7 @@ class Pipeline:
         c = self.s.comp
         used = self.db.used_in_compilations()
         clips = [x for x in self.db.recent(audience, time.time() - c.lookback_hours * 3600, C.POOL_STATUSES)
-                 if C.usable(x, used)]
+                 if C.usable(x, used)][-c.max_candidates:]
         if len({x["streamer"] for x in clips}) < c.min_streamers:
             return 0
         signature = max(x["id"] for x in clips)

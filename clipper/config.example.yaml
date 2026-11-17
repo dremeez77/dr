@@ -49,8 +49,9 @@ detector:
 
 compilations:            # «N стримеров реагируют на один момент»
   enabled: true
-  interval_minutes: 20   # как часто искать совпадения (вызов Claude только если есть новые клипы)
+  interval_minutes: 60   # как часто искать совпадения (вызов Claude только если есть новые клипы)
   lookback_hours: 72
+  max_candidates: 40     # свежих клипов на один поиск (больше = дороже)
   min_streamers: 2
   max_seconds: 58        # для Shorts; для TikTok Creator Rewards можно 90
   min_pool_score: 4      # слабые сюжетные моменты не выкидываем, а копим для подборок

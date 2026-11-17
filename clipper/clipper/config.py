@@ -66,8 +66,9 @@ class RenderCfg:
 class CompCfg:
     """Подборки «N стримеров реагируют на один момент»."""
     enabled: bool = True
-    interval_minutes: int = 20
+    interval_minutes: int = 60
     lookback_hours: int = 72
+    max_candidates: int = 40  # сколько свежих клипов отдаём модели за раз (влияет на стоимость)
     min_streamers: int = 2
     max_seconds: float = 58.0
     min_pool_score: int = 4   # слабые одиночные сюжетные моменты копим для подборок

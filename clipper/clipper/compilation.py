@@ -29,7 +29,7 @@ def payload(clips: list[dict]) -> list[dict]:
         out.append({
             "id": c["id"], "streamer": c["streamer"], "event": m["event"],
             "event_type": m.get("event_type", "other"), "duration": round(m["duration"], 1),
-            "best_window": m.get("window"), "transcript": lines[:40],
+            "best_window": m.get("window"), "transcript": lines[:15],
         })
     return out
 
