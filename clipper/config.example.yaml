@@ -1,0 +1,69 @@
+# Скопируй в config.yaml и поправь под себя. Секреты — в .env (см. .env.example).
+data_dir: data
+
+# Категория Twitch. Если Twitch назовёт её иначе — `python -m clipper check` покажет.
+game_names: ["Grand Theft Auto VI", "GTA VI", "Grand Theft Auto 6"]
+
+telegram_chats:
+  ru: "-1000000000000"   # чат модерации RU-клипов (узнать id: напиши боту /status)
+  en: "-1000000000000"   # чат модерации EN-клипов (можно тот же)
+
+youtube:
+  privacy: public        # public | unlisted | private (для теста ставь private)
+  tokens:
+    ru: secrets/youtube_ru.json
+    en: secrets/youtube_en.json
+
+recording:
+  buffer_minutes: 8      # сколько минут стрима держим на диске (~400 МБ на стрим при 720p)
+  segment_seconds: 6
+  quality: "720p60,720p,best"
+  max_recordings: 12     # одновременно пишущихся стримов (ограничение канала/диска)
+
+live_poll_seconds: 60
+clips_poll_seconds: 120
+clips_min_views: 20      # клип зрителей берём, если у него столько просмотров
+workers: 2               # параллельная обработка (Whisper+ffmpeg). С GPU можно 3-4
+
+whisper:
+  model: small           # tiny|base|small|medium|large-v3 — на GPU ставь large-v3
+  device: auto           # cpu | cuda | auto
+  compute_type: int8     # на GPU: float16
+
+llm:
+  model: claude-opus-5-5
+  effort: medium
+  min_score: 6           # ниже — клип выкидывается без показа тебе
+
+detector:
+  window: 10             # окно «всплеска», сек
+  baseline_window: 300   # окно «нормы», сек
+  ratio: 3.0             # во сколько раз чат должен ускориться
+  min_rate: 1.5          # минимум сообщений/сек (взвешенных)
+  cooldown: 90           # не чаще одного момента в N сек на стримера
+  pre_seconds: 45        # сколько секунд ДО пика чата берём
+  post_seconds: 20       # и ПОСЛЕ
+
+render:
+  cam_ratio: 0.38        # доля высоты под вебку
+  font: "DejaVu Sans"
+  font_size: 78
+  subs_margin_v: 560
+
+# facecam: можно задать вручную {x, y, w, h} в долях кадра, "none" — без вебки,
+# или не указывать — тогда Claude сам найдёт вебку на кадре.
+# ⚠️ Логины проверь командой `python -m clipper check`.
+streamers:
+  # ---------- RU (платят за просмотры) ----------
+  - {name: Zloy,      platform: twitch, channel: zloyn,      audience: ru}
+  - {name: EgorKreed, platform: twitch, channel: egorkreed,  audience: ru}
+  - {name: Buster,    platform: twitch, channel: buster,     audience: ru}
+  - {name: Evelone,   platform: twitch, channel: evelone192, audience: ru}
+  # добавляй: - {name: Ник, platform: twitch, channel: логин, audience: ru}
+
+  # ---------- EN (охваты, монетизация) ----------
+  - {name: Jynxzi,    platform: twitch, channel: jynxzi,     audience: en}
+  - {name: KaiCenat,  platform: twitch, channel: kaicenat,   audience: en}
+  - {name: Clix,      platform: twitch, channel: clix,       audience: en}
+  - {name: IShowSpeed, platform: youtube, channel: "https://www.youtube.com/@IShowSpeed", audience: en,
+     title_keywords: ["gta", "grand theft"]}

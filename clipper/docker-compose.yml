@@ -1,0 +1,17 @@
+services:
+  clipper:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./secrets:/app/secrets
+      - whisper-cache:/root/.cache/huggingface
+    # Для NVIDIA GPU раскомментируй (и поставь whisper.device: cuda):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+volumes:
+  whisper-cache:
