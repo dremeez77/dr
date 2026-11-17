@@ -107,6 +107,30 @@ const POSTER = `<div class="page">
 
 const doc = body => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>${CSS}</style></head><body>${body}</body></html>`;
 
+// ---------- Приглашение для преподавателей (A5) ----------
+const INVITE_URL = URL_ || 'https://hranilischespbgau.ru';
+const INVITE = `<div class="page" style="padding:7vw 8vw">
+  <div class="top"><span>ХРАНИЛИЩЕ</span><span>ПРИГЛАШЕНИЕ</span></div>
+  <div style="display:flex;gap:4vw;align-items:center;margin-top:4.5vw">
+    <div class="emb" style="width:14vw;height:14vw;flex:none">${emblem(GOLD, 5)}</div>
+    <div style="font:700 2.3vw/1.3 'JetBrains Mono',monospace;letter-spacing:.14em;color:${MUTED}">НЕДЕЛЯ ФИНАНСОВОЙ<br>ГРАМОТНОСТИ СПбГАУ<br>23–27 НОЯБРЯ</div>
+  </div>
+  <h1 style="font-size:8.6vw;margin-top:4.5vw">Приглашаем<br><span class="gold">вас в игру.</span></h1>
+  <p style="font:500 3.1vw/1.42 Inter,sans-serif;color:#d5def3;margin:3vw 0 0">Открытие Недели финансовой грамотности — не лекция. Будет шоу, после которого банк ВТБ запрёт приз в хранилище, а студенты пять дней будут подбирать к нему код.</p>
+  <p style="font:700 3.1vw/1.42 Inter,sans-serif;margin:2.4vw 0 0">Вы можете играть тоже — <span class="gold">против студентов.</span></p>
+  <div style="margin-top:3.5vw;border-top:.25vw solid #1d2f73">
+    ${[['23.11', 'Открытие · актовый зал'], ['24–27.11', 'Загадки на сайте, разминки по финансам'], ['25.11', 'Дебаты «Копить, инвестировать или брать в долг?»'], ['26.11', 'Ликбез по кредитам и игра «Сделка»'], ['27.11', 'Финал, суперигра и награждение']].map(([d, t]) =>
+      `<div style="display:flex;gap:3vw;padding:1.3vw 0;border-bottom:.25vw solid #1d2f73;font:600 2.7vw/1.3 Inter,sans-serif"><span style="width:17vw;flex:none;font-family:'JetBrains Mono',monospace;color:${GOLD}">${d}</span><span>${t}</span></div>`).join('')}
+  </div>
+  <div class="foot" style="align-items:center">
+    <div style="background:#fff;padding:1.2vw;border-radius:1.6vw;width:19vw;flex:none">${qrSvg(INVITE_URL + '/')}</div>
+    <div style="font:500 2.4vw/1.42 Inter,sans-serif;color:#d5def3">
+      Войдите через ВКонтакте и отметьте <b style="color:#fff">«Я преподаватель»</b>. У преподавателей свой зачёт и своя команда в рейтинге групп.
+      <div class="mono" style="margin-top:1.6vw;color:${GOLD};font-weight:700;font-size:2.4vw">${INVITE_URL.replace(/^https?:\/\//, '')}</div>
+      <div style="margin-top:1.2vw;color:${MUTED};font-size:2vw">При поддержке банка ВТБ</div>
+    </div>
+  </div></div>`;
+
 (async () => {
   const browser = await chromium.launch();
   const render = async (name, html, { pdf, w, h }) => {
@@ -121,6 +145,7 @@ const doc = body => `<!doctype html><html lang="ru"><head><meta charset="utf-8">
     await render(name + '-story', html, { w: 540, h: 960 });           // сторис 1080×1920
   }
   await render('poster', POSTER, { pdf: 'A3', w: 794, h: 1123 });
+  await render('invite-teachers', INVITE, { pdf: 'A5', w: 559, h: 794 });
   await browser.close();
   console.log('Готово:', fs.readdirSync(OUT).join(', '));
   console.log('Шифр на тизерах:', TEASE, '→ «приходи в актовый зал»');
