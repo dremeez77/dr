@@ -50,7 +50,7 @@ class Pipeline:
     def __init__(self, s: Settings):
         self.s = s
         self.db = DB(s.data_dir / "clips.db")
-        self.claude = Claude(s.llm_model, s.llm_effort)
+        self.claude = Claude(s.llm_model, s.llm_effort, s.llm_creative_model)
         self.transcriber = Transcriber(s.whisper_model, s.whisper_device, s.whisper_compute)
         self.queue: asyncio.Queue[Job] = asyncio.Queue()
         self.live: dict[str, LiveInfo] = {}

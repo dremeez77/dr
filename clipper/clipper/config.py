@@ -110,6 +110,7 @@ class Settings:
     whisper_compute: str = "int8"
     llm_model: str = "claude-opus-5-5"
     llm_effort: str = "medium"
+    llm_creative_model: str = "claude-opus-5-5"
     min_score: int = 6
     youtube_privacy: str = "public"
     youtube_tokens: dict[str, str] = field(default_factory=dict)
@@ -177,6 +178,7 @@ def load(path: str | Path) -> Settings:
         whisper_compute=wh.get("compute_type", "int8"),
         llm_model=llm.get("model", "claude-opus-5-5"),
         llm_effort=llm.get("effort", "medium"),
+        llm_creative_model=llm.get("creative_model", llm.get("model", "claude-opus-5-5")),
         min_score=llm.get("min_score", 6),
         youtube_privacy=yt.get("privacy", "public"),
         youtube_tokens=yt.get("tokens", {}),

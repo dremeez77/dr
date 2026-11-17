@@ -31,7 +31,10 @@ whisper:
   compute_type: int8     # на GPU: float16
 
 llm:
-  model: claude-opus-5-5
+  # Экономный режим: массовую оценку моментов делает дешёвая Haiku (~$0.002 за клип),
+  # подборки и дайджест — умная Opus. Максимальное качество везде: model: claude-opus-5-5
+  model: claude-haiku-5-5
+  creative_model: claude-opus-5-5
   effort: medium
   min_score: 6           # ниже — клип выкидывается без показа тебе
 

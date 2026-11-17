@@ -179,23 +179,34 @@ DIGEST_SCHEMA = {
 LANG_NAMES = {"ru": "Russian", "en": "English"}
 
 
+# модели, для которых доступен серверный fallback при отказе
+FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+
+
 class Claude:
-    def __init__(self, model: str = "claude-opus-5-5", effort: str = "medium"):
+    """model — массовая оценка моментов и поиск вебки; creative_model — подборки и дайджест."""
+
+    def __init__(self, model: str = "claude-opus-5-5", effort: str = "medium", creative_model: str | None = None):
         self.client = anthropic.Anthropic()
         self.model = model
+        self.creative_model = creative_model or model
         self.effort = effort
 
-    def _json(self, system: str, content, schema: dict, max_tokens: int = 4000) -> dict | None:
+    def _json(self, system: str, content, schema: dict, max_tokens: int = 4000,
+              model: str | None = None) -> dict | None:
+        model = model or self.model
+        params = dict(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+            output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": schema}},
+        )
         try:
-            resp = self.client.beta.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": content}],
-                output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": schema}},
-                betas=[FALLBACK_BETA],
-                fallbacks="default",
-            )
+            if model in FALLBACK_MODELS:
+                resp = self.client.beta.messages.create(**params, betas=[FALLBACK_BETA], fallbacks="default")
+            else:
+                resp = self.client.messages.create(**params)
         except anthropic.RateLimitError as e:
             log.warning("Claude rate limited: %s", e)
             return None
@@ -246,7 +257,7 @@ class Claude:
         system = GROUP_SYSTEM.format(min_streamers=min_streamers, max_seconds=max_seconds,
                                      lang=LANG_NAMES.get(audience, audience))
         content = "Candidate clips:\n" + json.dumps(candidates, ensure_ascii=False, indent=1)
-        data = self._json(system, content, GROUP_SCHEMA, 16000)
+        data = self._json(system, content, GROUP_SCHEMA, 16000, model=self.creative_model)
         return data.get("groups", []) if data else []
 
     def digest(self, audience: str, candidates: list[dict], min_segments: int, target_minutes: float,
@@ -254,7 +265,7 @@ class Claude:
         system = DIGEST_SYSTEM.format(min_segments=min_segments, target_minutes=target_minutes,
                                       max_minutes=max_minutes, lang=LANG_NAMES.get(audience, audience))
         content = "Today's candidate moments:\n" + json.dumps(candidates, ensure_ascii=False, indent=1)
-        return self._json(system, content, DIGEST_SCHEMA, 16000)
+        return self._json(system, content, DIGEST_SCHEMA, 16000, model=self.creative_model)
 
     def find_facecam(self, frame: Path) -> Facecam | None:
         img = base64.standard_b64encode(frame.read_bytes()).decode()
