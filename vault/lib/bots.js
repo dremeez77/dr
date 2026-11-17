@@ -103,8 +103,25 @@ class Bots {
       const u = await this.vk('users.get', { user_ids: m.from_id });
       if (u && u[0]) name = `${u[0].first_name} ${u[0].last_name}`;
     } catch { /* имя не критично */ }
-    const reply = this.replyFor(m.text, 'vk', String(m.from_id), name);
+    let reply;
+    if (CODE_RE.test(String(m.text || '').toUpperCase().replace(/[^A-Z0-9]/g, '')) && !(await this.vkIsMember(m.from_id))) {
+      // Код не тратится: вступив в сообщество, игрок присылает тот же код ещё раз.
+      reply = `Чтобы войти в игру, сначала вступи в сообщество: https://vk.com/${this.cfg.vkScreen || 'club' + this.cfg.vkGroupId}\nПотом пришли этот же код ещё раз.`;
+    } else {
+      reply = this.replyFor(m.text, 'vk', String(m.from_id), name);
+    }
     await this.vk('messages.send', { user_id: m.from_id, random_id: Math.floor(Math.random() * 2 ** 31), message: reply });
+  }
+
+  /** Состоит ли человек в сообществе. Если ВК не ответил, вход не блокируем, чтобы игра не встала. */
+  async vkIsMember(userId) {
+    try {
+      const r = await this.vk('groups.isMember', { group_id: this.cfg.vkGroupId, user_id: userId });
+      return r === 1 || r === true || (r && r.member === 1);
+    } catch (e) {
+      this.log.error('vk: проверка участника не удалась:', e.message);
+      return true;
+    }
   }
 
   // ---------- Отправка ----------

@@ -162,6 +162,27 @@ function client(base) {
   const fin = (await admin('/api/admin/final')).body;
   assert.equal(fin.answer, '4821'); assert.ok(fin.top.length >= 2);
 
+  // --- вход через ВК только для участников сообщества ---
+  const sent = []; const realVk = bots.vk.bind(bots);
+  let member = 0;
+  bots.vk = async (method, params) => {
+    if (method === 'users.get') return [{ first_name: 'Вера', last_name: 'Т' }];
+    if (method === 'groups.isMember') return member;
+    if (method === 'messages.send') { sent.push(params.message); return 1; }
+    return realVk(method, params);
+  };
+  const vv = client(base); const st2 = (await vv('/api/auth/start', {})).body;
+  await bots.onVk({ from_id: 555, text: st2.code });
+  assert.match(sent.pop(), /вступи в сообщество/, 'не участника просят вступить');
+  assert.equal((await vv('/api/auth/poll')).body.status, 'waiting', 'код не потрачен');
+  member = 1;
+  await bots.onVk({ from_id: 555, text: st2.code });
+  assert.match(sent.pop(), /Готово/);
+  assert.equal((await vv('/api/auth/poll')).body.status, 'ok');
+  await bots.onVk({ from_id: 556, text: 'привет' });
+  assert.match(sent.pop(), /пришли мне код/, 'обычное сообщение без проверки');
+  bots.vk = realVk;
+
   // --- конец игры ---
   await admin('/api/admin/puzzle', { num: 3, title: 'Тайна 3', body: 'x', opens_at: t - 1000, answers: ['да'], hints: [], published: true });
   await admin('/api/admin/settings', { ends_at: Date.now() - 1 });

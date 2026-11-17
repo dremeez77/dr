@@ -254,9 +254,10 @@ async function startLogin(provider) {
   modal(`<h3>${isTg ? 'Telegram' : 'ВКонтакте'}</h3>
     <p class="muted" style="margin:0">${isTg
       ? 'Нажми кнопку ниже и в боте нажми «Запустить». Если код не отправился сам, пришли его боту сообщением.'
-      : 'Открой сообщения сообщества и отправь боту этот код одним сообщением.'}</p>
+      : 'Вступи в сообщество, открой его сообщения и отправь боту этот код одним сообщением. Без вступления бот не пустит.'}</p>
     <div class="code" id="code">${esc(r.code)}</div>
     <a class="btn" style="width:100%" target="_blank" rel="noopener" href="${esc(isTg ? r.tg : r.vk)}">${isTg ? 'Открыть бота в Telegram' : 'Открыть сообщения ВКонтакте'}</a>
+    ${isTg ? '' : `<a class="btn ghost" style="width:100%;margin-top:10px" target="_blank" rel="noopener" href="${esc(String(r.vk).replace('vk.me/', 'vk.com/'))}">Вступить в сообщество</a>`}
     <div class="wait"><span class="spin"></span>Жду подтверждения от бота… Код действует 15 минут.</div>
     <div class="err" id="lerr"></div>
     <p style="margin:14px 0 0"><button class="ghost small" id="backLogin">← Другой способ</button></p>`);
