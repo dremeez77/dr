@@ -164,7 +164,7 @@ $('#qrEnd').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 1, scalable: true
 $('#urlEnd').textContent = location.host;
 
 // ---------- Аукцион: техник вводит ставки цифрами и Enter ----------
-const bids = []; let typing = '', sold = false;
+const bids = []; let typing = '', sold = false, soldTyping = '';
 function drawBid() {
   const last = bids.length ? bids[bids.length - 1] : 50;
   const el = $('#bid');
@@ -173,8 +173,8 @@ function drawBid() {
   $('#bids').textContent = bids.length ? bids.slice(-6).map(b => b.toLocaleString('ru-RU')).join('  →  ') : 'Начальная цена — 50 ₽';
 }
 drawBid();
-function sell() {
-  const p = bids.length ? bids[bids.length - 1] : 0;
+function sell(manual) {
+  const p = manual || (bids.length ? bids[bids.length - 1] : 0);
   $('#price').textContent = p ? rub(p) : '—';
   $('#soldNote').textContent = p > 1000 ? `Это на ${rub(p - 1000)} больше, чем стоит лот. Запомните эту цифру.` : 'Запомните эту цифру.';
   if (p) fetch('/api/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ auction_price: String(p) }) }).catch(() => {});
@@ -230,6 +230,12 @@ function commitBid() { const n = Number(typing); typing = ''; if (n > 0) bids.pu
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   $('#check').style.display = e.code === 'KeyC' ? ($('#check').style.display === 'none' ? 'block' : 'none') : 'none';
+  // На слайде «Продано» цену можно вбить вручную: цифры, потом Enter.
+  if (slides[cur].id === 'sSold') {
+    if (/^Digit\d$|^Numpad\d$/.test(e.code)) { if (soldTyping.length < 6) soldTyping += e.code.slice(-1); $('#price').textContent = soldTyping + ' ₽'; return; }
+    if (e.code === 'Backspace') { soldTyping = soldTyping.slice(0, -1); $('#price').textContent = soldTyping ? soldTyping + ' ₽' : '—'; return; }
+    if ((e.code === 'Enter' || e.code === 'NumpadEnter') && soldTyping) { e.preventDefault(); const n = Number(soldTyping); soldTyping = ''; bids.push(n); drawBid(); sell(n); return; }
+  }
   if (slides[cur].id === 'sAuction') {
     if (/^Digit\d$|^Numpad\d$/.test(e.code)) { if (typing.length < 6) typing += e.code.slice(-1); return drawBid(); }
     if (e.code === 'Backspace') { typing = typing.slice(0, -1); return drawBid(); }
