@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Голосование зала</title>
+<meta name="theme-color" content="#040b2c">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .wrap { max-width: 520px; padding: 20px 16px 40px; }
+  .step { font: 700 12px/1 var(--mono); letter-spacing: .18em; color: var(--muted); }
+  h1 { font-size: 28px; line-height: 1.15; margin: 10px 0 10px; }
+  .txt { color: #d5def3; margin: 0 0 18px; }
+  .opt { display: block; width: 100%; text-align: left; margin-top: 10px; padding: 16px; font-size: 17px; line-height: 1.3;
+         background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; }
+  .opt b { font-family: var(--mono); color: var(--gold); margin-right: 10px; }
+  .opt.sel { border-color: var(--gold); background: rgba(25,181,254,.1); }
+  .opt.win { border-color: var(--red); background: rgba(255,93,93,.1); }
+  .opt .pct { float: right; font-family: var(--mono); color: var(--muted); margin-left: 10px; }
+  .note { margin-top: 16px; color: var(--muted); font-size: 14px; min-height: 22px; }
+  .debt { margin-top: 22px; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); }
+  .debt .v { font: 800 34px/1.1 var(--mono); color: var(--red); }
+  .big { text-align: center; padding: 16vh 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap" id="v"><p class="muted">Загрузка…</p></div>
+<script>
+'use strict';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rub = n => Number(n).toLocaleString('ru-RU') + ' ₽';
+const L = ['А', 'Б', 'В', 'Г'];
+let S = null, key = '', sending = false;
+
+async function load() {
+  try { S = await (await fetch('/api/story')).json(); } catch { return; }
+  // Перерисовываем только когда что-то изменилось, чтобы кнопки не дёргались под пальцем.
+  const k = [S.phase, S.scene, S.my, S.pick].join('|');
+  if (k !== key) { key = k; render(); }
+}
+
+function render() {
+  const v = document.getElementById('v');
+  if (S.phase === 'idle') {
+    v.innerHTML = `<div class="big"><div class="step">${esc(S.name)}</div><h1>Ты в игре</h1><p class="txt">${esc(S.intro)}</p><p class="muted">Не закрывай страницу: вопрос появится здесь сам.</p></div>`;
+    return;
+  }
+  if (S.phase === 'final') {
+    v.innerHTML = `<div class="step">ИТОГ</div><h1>Долг ${esc(S.heroGen)}: ${rub(S.debt)}</h1><p class="txt">${esc(S.ending)}</p>
+      ${S.picks.map(p => `<div class="opt"><span class="pct">${p.delta ? '+' + rub(p.delta) : '0 ₽'}</span><span class="muted" style="font-size:13px">${esc(p.title)}</span><br>${esc(p.label)}</div>`).join('')}`;
+    return;
+  }
+  const total = S.counts ? S.counts.reduce((a, b) => a + b, 0) : 0;
+  const opts = S.choices.map((c, i) => {
+    const cls = S.phase === 'result' ? (i === S.pick ? 'win' : '') : (i === S.my ? 'sel' : '');
+    const pct = S.phase === 'result' ? `<span class="pct">${total ? Math.round(S.counts[i] / total * 100) : 0}%</span>` : '';
+    return `<button class="opt ${cls}" data-i="${i}" ${S.phase === 'result' ? 'disabled' : ''}>${pct}<b>${L[i]}</b>${esc(c)}</button>`;
+  }).join('');
+  const note = S.phase === 'result'
+    ? `<b class="red">Зал выбрал вариант ${L[S.pick]}.</b> ${esc(S.outcome)}`
+    : S.my == null ? 'Выбери вариант. Передумать можно, пока вопрос открыт.' : `Голос принят: вариант ${L[S.my]}. Смотри на экран.`;
+  v.innerHTML = `<div class="step">ВОПРОС ${S.scene + 1} ИЗ ${S.total}</div><h1>${esc(S.title)}</h1><p class="txt">${esc(S.text)}</p>${opts}
+    <div class="note">${note}</div>
+    <div class="debt"><span class="muted" style="font-size:13px">Долг ${esc(S.heroGen)} сейчас</span><div class="v">${rub(S.debt)}</div></div>`;
+  v.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => {
+    if (sending || S.phase !== 'voting') return;
+    sending = true;
+    try {
+      const r = await fetch('/api/story/vote', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ choice: Number(b.dataset.i) }) });
+      if (r.ok) { S.my = Number(b.dataset.i); key = ''; }
+    } catch { /* попробует ещё раз */ }
+    sending = false; load();
+  });
+}
+load(); setInterval(load, 1200);
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "vault",
+  "version": "1.0.0",
+  "private": true,
+  "description": "«Хранилище» — сайт с загадками для Недели финансовой грамотности",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "test": "node --no-warnings test/smoke.js"
+  }
+}

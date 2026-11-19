@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сцена: финансовый квиз</title>
+<style>
+  :root { --u: min(1vw, 1.78vh); }
+  html, body { margin: 0; height: 100%; }
+  body { background: radial-gradient(calc(var(--u)*120) calc(var(--u)*60) at 50% 40%, #0e1c57, #040b2c 70%); color: #eef2fb; font-family: "Inter Display", Inter, system-ui, sans-serif; overflow: hidden; cursor: none; }
+  .mono { font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  #s { position: absolute; inset: 0; padding: calc(var(--u)*4) calc(var(--u)*5); box-sizing: border-box; display: flex; flex-direction: column; }
+  .k { font: 700 calc(var(--u)*1.5)/1 ui-monospace, monospace; letter-spacing: .26em; color: #93a5cf; text-transform: uppercase; }
+  .top { display: flex; justify-content: space-between; align-items: center; }
+  h1 { font-weight: 900; font-size: calc(var(--u)*5); line-height: 1.08; letter-spacing: -.02em; margin: calc(var(--u)*2.5) 0; text-wrap: balance; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--u)*1.6); margin-top: auto; }
+  .o { position: relative; display: flex; gap: calc(var(--u)*1.6); align-items: center; padding: calc(var(--u)*2.4) calc(var(--u)*2.2); border-radius: calc(var(--u)*1.4); color: #04102e; font-size: calc(var(--u)*2.6); font-weight: 700; line-height: 1.2; overflow: hidden; transition: opacity .4s; }
+  .o b { font: 900 calc(var(--u)*3)/1 ui-monospace, monospace; }
+  .o .n { margin-left: auto; font: 900 calc(var(--u)*2.6)/1 ui-monospace, monospace; }
+  .rv .o { font-size: calc(var(--u)*2); padding: calc(var(--u)*1.8); }
+  .o0 { background: #19b5fe; } .o1 { background: #ff7a7a; } .o2 { background: #f5c542; } .o3 { background: #3ddc84; }
+  .o.dim { opacity: .25; }
+  .timer { font: 900 calc(var(--u)*7)/1 ui-monospace, monospace; color: #19b5fe; }
+  .timer.low { color: #ff5d5d; }
+  .center { margin: auto; text-align: center; }
+  .qr { background: #fff; padding: calc(var(--u)*1.3); border-radius: calc(var(--u)*1.4); width: calc(var(--u)*24); margin: calc(var(--u)*1.5) auto; }
+  .qr svg { display: block; width: 100%; height: auto; }
+  .note { font-size: calc(var(--u)*2.1); color: #d5def3; margin: calc(var(--u)*1.5) 0 0; }
+  .split { display: grid; grid-template-columns: 2.2fr 1fr; gap: calc(var(--u)*4); flex: 1; min-height: 0; }
+  .lb { background: #0a1543; border: calc(var(--u)*.15) solid #1d2f73; border-radius: calc(var(--u)*1.6); padding: calc(var(--u)*2.4); align-self: start; }
+  .lb .r { display: flex; gap: calc(var(--u)*1.6); align-items: baseline; padding: calc(var(--u)*1.1) 0; border-bottom: calc(var(--u)*.1) solid #1d2f73; font-size: calc(var(--u)*2.2); }
+  .lb .r:last-child { border-bottom: 0; }
+  .lb .p { font: 800 calc(var(--u)*2.2)/1 ui-monospace, monospace; color: #93a5cf; width: calc(var(--u)*3); }
+  .lb .sc { margin-left: auto; font: 800 calc(var(--u)*2.2)/1 ui-monospace, monospace; }
+  .lb .r:first-of-type .p, .lb .r:first-of-type .sc { color: #19b5fe; }
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: calc(var(--u)*2.4); margin-top: calc(var(--u)*3); }
+  .pd { width: calc(var(--u)*24); text-align: center; }
+  .pd .nm { font-size: calc(var(--u)*2.8); font-weight: 800; margin-bottom: calc(var(--u)*1); overflow-wrap: anywhere; }
+  .pd .bx { background: #0a1543; border: calc(var(--u)*.2) solid #1d2f73; border-radius: calc(var(--u)*1.4) calc(var(--u)*1.4) 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .pd .pl { font: 900 calc(var(--u)*6)/1 ui-monospace, monospace; }
+  .pd .pt { font: 700 calc(var(--u)*2)/1 ui-monospace, monospace; color: #93a5cf; margin-top: calc(var(--u)*1); }
+  .pd.first .bx { border-color: #19b5fe; } .pd.first .pl { color: #19b5fe; }
+  .help { position: fixed; left: 1vw; bottom: 1vh; font: 11px/1 ui-monospace, monospace; color: rgba(150,165,207,.4); }
+  #warn { position: fixed; top: 0; left: 0; right: 0; background: #ff5d5d; color: #111; font: 700 16px/1.3 system-ui; padding: 10px; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<div id="s"></div>
+<div id="warn">Управление выключено: сначала войди в /admin в этом же браузере, потом обнови страницу.</div>
+<div class="help">ПРОБЕЛ или кликер: дальше · Shift+R: начать заново · F: полный экран</div>
+<script src="/vendor/qrcode.js"></script>
+<script>
+'use strict';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const L = ['А', 'Б', 'В', 'Г'];
+const qr = qrcode(0, 'M'); qr.addData(location.origin + '/quiz'); qr.make();
+const QR = qr.createSvgTag({ cellSize: 8, margin: 1, scalable: true });
+let S = null, offset = 0, key = '', busy = false;
+const s = document.getElementById('s');
+
+async function load() {
+  try { S = await (await fetch('/api/quiz')).json(); offset = S.now - Date.now(); } catch { return; }
+  render();
+}
+function lb(rows) {
+  return `<div class="lb"><div class="k" style="margin-bottom:calc(var(--u)*1.4)">Лучшие</div>${rows.map(r => `<div class="r"><span class="p">${r.rank}</span><span>${esc(r.name)}</span><span class="sc">${r.score}</span></div>`).join('') || '<div class="note">Пока никто не набрал баллов</div>'}</div>`;
+}
+function render() {
+  const k = [S.phase, S.idx].join('|');
+  if (S.phase === 'idle') {
+    s.innerHTML = `<div class="center"><div class="k">${esc(S.title)}</div><h1 style="font-size:calc(var(--u)*5);margin:calc(var(--u)*1.5) 0">Достаём телефоны</h1>
+      <div class="qr">${QR}</div><div class="mono" style="font-size:calc(var(--u)*3);font-weight:800;color:#19b5fe">${esc(location.host)}/quiz</div>
+      <div class="note">Не открывается? Выключи VPN на минуту.</div>
+      <div class="note" style="font-size:calc(var(--u)*2.6);margin-top:calc(var(--u)*2.4)">В игре: <b class="mono">${S.players}</b></div></div>`;
+    key = k; return;
+  }
+  if (S.phase === 'final') {
+    const t = S.top || [], order = [1, 0, 2].filter(i => t[i]);
+    const h = [26, 34, 20];
+    s.innerHTML = `<div class="center" style="width:100%"><div class="k">Итоги квиза</div><h1>Победители</h1>
+      <div class="podium">${order.map(i => `<div class="pd ${i === 0 ? 'first' : ''}"><div class="nm">${esc(t[i].name)}</div><div class="bx" style="height:calc(var(--u)*${h[order.indexOf(i)]})"><div class="pl">${i + 1}</div><div class="pt">${t[i].score}</div></div></div>`).join('')}</div></div>`;
+    key = k; return;
+  }
+  const reveal = S.phase === 'reveal', total = (S.counts || []).reduce((a, b) => a + b, 0);
+  const opts = S.a.map((t, i) => `<div class="o o${i} ${reveal && i !== S.correct ? 'dim' : ''}"><b>${L[i]}</b><span>${esc(t)}</span>${reveal ? `<span class="n">${S.counts[i]}</span>` : ''}</div>`).join('');
+  const head = `<div class="top"><span class="k">Вопрос ${S.idx + 1} из ${S.total} · ${esc(S.round)}</span>${reveal ? `<span class="k">Ответили: ${total}</span>` : `<span class="timer" id="t"></span>`}</div>`;
+  if (reveal) {
+    s.innerHTML = head + `<div class="split"><div style="display:flex;flex-direction:column"><h1 style="font-size:calc(var(--u)*3.6)">${esc(S.q)}</h1><div class="grid rv">${opts}</div><p class="note">${esc(S.note)}</p></div>${lb(S.top || [])}</div>`;
+  } else {
+    s.innerHTML = head + `<h1 style="font-size:calc(var(--u)*5.6)">${esc(S.q)}</h1><div class="grid">${opts}</div>
+      <div class="note" style="text-align:center;margin-top:calc(var(--u)*2)">Ответили: <b class="mono" id="ans">${S.answered}</b> из ${S.players} · ${esc(location.host)}/quiz</div>`;
+  }
+  key = k; tick();
+}
+function tick() {
+  const t = document.getElementById('t'); if (!t || !S) return;
+  const l = Math.max(0, Math.ceil((S.endsAt - (Date.now() + offset)) / 1000));
+  t.textContent = l; t.className = 'timer' + (l <= 5 ? ' low' : '');
+  const a = document.getElementById('ans'); if (a) a.textContent = S.answered;
+}
+async function control(action) {
+  if (busy) return; busy = true;
+  try { const r = await fetch('/api/quiz/control', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
+    document.getElementById('warn').style.display = r.status === 401 || r.status === 403 ? 'block' : 'none'; } catch {}
+  await load(); busy = false;
+}
+addEventListener('keydown', e => {
+  if (['Space', 'ArrowRight', 'PageDown', 'Enter'].includes(e.code)) { e.preventDefault(); control('next'); }
+  if (e.code === 'KeyR' && e.shiftKey && confirm('Начать квиз заново? Все баллы обнулятся.')) control('reset');
+  if (e.code === 'KeyF') document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+});
+load(); setInterval(load, 1000); setInterval(tick, 250);
+</script>
+</body>
+</html>
