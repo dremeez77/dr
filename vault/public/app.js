@@ -29,6 +29,13 @@ function valueNow(p) {
   const f = Math.min(1, Math.max(0, (serverNow() - p.opens_at) / (p.decay_minutes * 60000)));
   return Math.round(p.max_points - (p.max_points - p.min_points) * f);
 }
+const ICON_C = '<svg class="li" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>', ICON_O = '<svg class="li" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 7.6-1.7"/></svg>';
+let firstPaint = true; // плавное появление — только при первой отрисовке, а не при каждом обновлении
+function parts(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return [Math.floor(s / 86400), Math.floor(s % 86400 / 3600), Math.floor(s % 3600 / 60), s % 60]; }
+const p2 = n => String(n).padStart(2, '0');
+// Короткий таймер для карточек: «1д 00:45» или «00:45:12», всегда в одну строку.
+function fmtShort(ms) { const [d, h, m, s] = parts(ms); return d ? `${d}д ${p2(h)}:${p2(m)}` : `${p2(h)}:${p2(m)}:${p2(s)}`; }
+const tilesHtml = ts => `<div class="tiles" data-tiles="${ts}">${['дней', 'часов', 'минут', 'секунд'].map(l => `<div class="tile"><b>00</b><span>${l}</span></div>`).join('')}</div>`;
 const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11) ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
 const over = () => S && S.ends_at > 0 && serverNow() >= S.ends_at;
 
@@ -75,18 +82,18 @@ function renderHome() {
   const next = ps.find(p => !p.open && p.opens_at > serverNow());
   let nextHtml;
   if (over()) nextHtml = `<div class="next"><span class="lbl">Игра завершена</span><span class="cd">Итоги ниже</span></div>`;
-  else if (next) nextHtml = `<div class="next"><span class="lbl">Замок №${next.num} откроется через</span><span class="cd" data-cd="${next.opens_at}">${fmtLeft(next.opens_at - serverNow())}</span><span class="muted" style="font-size:13px">${esc(fmtWhen(next.opens_at))}</span></div>`;
+  else if (next) nextHtml = `<div class="next"><span class="lbl"><i class="pulse-dot"></i>Замок №${next.num} откроется через</span>${tilesHtml(next.opens_at)}<span class="muted" style="font-size:13px">${esc(fmtWhen(next.opens_at))}</span></div>`;
   else if (ps.length) nextHtml = `<div class="next"><span class="lbl">Все замки открыты</span><span class="cd">Успей решить</span></div>`;
   else nextHtml = `<div class="next"><span class="lbl">Скоро</span><span class="cd">Ждите сигнала</span></div>`;
 
   const locks = ps.map(p => {
-    if (!p.open && p.draft && p.opens_at <= serverNow()) return `<div class="lock closed"><span class="n">ЗАМОК №${p.num}</span><span class="t">Хранитель готовит замок</span>
+    if (!p.open && p.draft && p.opens_at <= serverNow()) return `<div class="lock closed">${ICON_C}<span class="n">ЗАМОК №${p.num}</span><span class="t">Хранитель готовит замок</span>
       <span class="big">скоро</span><span class="sub">бот напишет, когда откроется</span></div>`;
-    if (!p.open) return `<div class="lock closed"><span class="n">ЗАМОК №${p.num}</span><span class="t">Закрыт</span>
-      <span class="big" data-cd="${p.opens_at}">${fmtLeft(p.opens_at - serverNow())}</span><span class="sub">${esc(fmtWhen(p.opens_at))}</span></div>`;
-    if (p.solved) return `<a class="lock solved" href="#/lock/${p.num}"><span class="n">ЗАМОК №${p.num} · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span>
+    if (!p.open) return `<div class="lock closed">${ICON_C}<span class="n">ЗАМОК №${p.num}</span><span class="t">Закрыт</span>
+      <span class="big" data-cds="${p.opens_at}">${fmtShort(p.opens_at - serverNow())}</span><span class="sub">${esc(fmtWhen(p.opens_at))}</span></div>`;
+    if (p.solved) return `<a class="lock solved" href="#/lock/${p.num}">${ICON_O}<span class="n">ЗАМОК №${p.num} · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span>
       <span class="big">+${p.solved.points}</span><span class="sub">Ты решил ${p.solved.place}-м · всего решили: ${p.solvers}</span></a>`;
-    return `<a class="lock open" href="#/lock/${p.num}"><span class="n">ЗАМОК №${p.num} · ИДЁТ ВЗЛОМ</span><span class="t">${esc(p.title)}</span>
+    return `<a class="lock open" href="#/lock/${p.num}">${ICON_C}<span class="n">ЗАМОК №${p.num} · ИДЁТ ВЗЛОМ</span><span class="t">${esc(p.title)}</span>
       <span class="big"><span data-val="${p.num}">${valueNow(p)}</span></span><span class="sub">баллов сейчас · решили: ${p.solvers}</span></a>`;
   }).join('');
 
@@ -94,11 +101,19 @@ function renderHome() {
 
   $('#view').innerHTML = `
     <section class="hero">
-      <h1>Четыре замка.<br>Один приз.</h1>
+      <div class="orb-wrap" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>
+        <svg class="keyhole" viewBox="0 0 54 80"><circle cx="27" cy="22" r="16"/><path d="M27 30 L14 74 L40 74 Z"/></svg></div>
+      <h1>Четыре замка.<br><span class="grad">Один приз.</span></h1>
       <p>Приз от банка ВТБ заперт в хранилище. Каждый день открывается новая загадка. Кто решает раньше, получает больше баллов. Нейросеть не поможет: думать придётся самому.</p>
       ${nextHtml}${cta}
       <p style="margin-top:18px;font-size:13px;letter-spacing:.08em">ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</p>
     </section>
+    <h2>Как это устроено</h2>
+    <div class="steps">
+      <div class="step"><span class="sn">01</span><b>Войди через ВКонтакте</b><span>Вступи в сообщество и пришли боту код. Это 30 секунд.</span></div>
+      <div class="step"><span class="sn">02</span><b>Жди сигнала</b><span>Бот напишет, когда откроется новый замок. Каждый день в своё время.</span></div>
+      <div class="step"><span class="sn">03</span><b>Решай быстрее всех</b><span>Чем раньше ответ, тем больше баллов. Нейросеть не поможет.</span></div>
+    </div>
     <h2>Замки</h2>
     <div class="locks">${locks || '<p class="muted">Замки появятся здесь после открытия недели.</p>'}</div>
     ${warm.length ? `<h2>Разминка дня</h2><div class="locks">${warm.map(p => p.solved
@@ -116,9 +131,11 @@ function renderHome() {
       <div class="rule"><b>Разминка для всех</b><span>Каждый день есть простой вопрос на 10 баллов. Скорость не важна: баллы получает каждый, кто ответил верно.</span></div>
       <div class="rule"><b>Группа против группы</b><span>Баллы пяти лучших игроков группы идут в командный зачёт. Преподаватели играют одной командой.</span></div>
       <div class="rule"><b>Играем по одному</b><span>Один человек — один аккаунт. Приз вручается лично, поэтому передавать ответы нет смысла.</span></div>
-      <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые спрятаны в колледже и в том, что звучало на открытии.</span></div>
+      <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые прозвучали на открытии и на мероприятиях недели.</span></div>
     </div>`;
   const c = $('#cta'); if (c) c.onclick = openLogin;
+  $('#view').classList.toggle('appear', firstPaint); firstPaint = false;
+  tick();
 }
 
 function boardHtml(limit) {
@@ -301,6 +318,15 @@ function tick() {
     const left = Number(el.dataset.cd) - serverNow();
     el.textContent = fmtLeft(left);
     if (left <= 0) reload = true;
+  });
+  document.querySelectorAll('[data-tiles]').forEach(el => {
+    const ms = Number(el.dataset.tiles) - serverNow(), v = parts(ms);
+    el.querySelectorAll('b').forEach((b, i) => { b.textContent = p2(v[i]); });
+    el.firstElementChild.style.display = v[0] ? '' : 'none'; // без дней — три плитки
+    if (ms <= 0) reload = true;
+  });
+  document.querySelectorAll('[data-cds]').forEach(el => {
+    const ms = Number(el.dataset.cds) - serverNow(); el.textContent = fmtShort(ms); if (ms <= 0) reload = true;
   });
   if (S) document.querySelectorAll('[data-val]').forEach(el => {
     const p = S.puzzles.find(x => x.num === Number(el.dataset.val)); if (p) el.textContent = valueNow(p);
