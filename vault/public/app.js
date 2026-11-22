@@ -24,7 +24,7 @@ function fmtLeft(ms) {
   const hms = `${p(Math.floor(s % 86400 / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
   return d > 0 ? `${d} д ${hms}` : hms;
 }
-const fmtWhen = ts => new Date(ts).toLocaleString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+const fmtWhen = ts => new Date(ts).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 function valueNow(p) {
   const f = Math.min(1, Math.max(0, (serverNow() - p.opens_at) / (p.decay_minutes * 60000)));
   return Math.round(p.max_points - (p.max_points - p.min_points) * f);
@@ -72,7 +72,7 @@ function renderHeader() {
 function renderHome() {
   if (!S) return;
   const ps = S.puzzles.filter(p => p.kind !== 'warmup'), warm = S.puzzles.filter(p => p.kind === 'warmup' && p.open);
-  const next = ps.find(p => !p.open);
+  const next = ps.find(p => !p.open && p.opens_at > serverNow());
   let nextHtml;
   if (over()) nextHtml = `<div class="next"><span class="lbl">Игра завершена</span><span class="cd">Итоги ниже</span></div>`;
   else if (next) nextHtml = `<div class="next"><span class="lbl">Замок №${next.num} откроется через</span><span class="cd" data-cd="${next.opens_at}">${fmtLeft(next.opens_at - serverNow())}</span><span class="muted" style="font-size:13px">${esc(fmtWhen(next.opens_at))}</span></div>`;
@@ -80,6 +80,8 @@ function renderHome() {
   else nextHtml = `<div class="next"><span class="lbl">Скоро</span><span class="cd">Ждите сигнала</span></div>`;
 
   const locks = ps.map(p => {
+    if (!p.open && p.draft && p.opens_at <= serverNow()) return `<div class="lock closed"><span class="n">ЗАМОК №${p.num}</span><span class="t">Хранитель готовит замок</span>
+      <span class="big">скоро</span><span class="sub">бот напишет, когда откроется</span></div>`;
     if (!p.open) return `<div class="lock closed"><span class="n">ЗАМОК №${p.num}</span><span class="t">Закрыт</span>
       <span class="big" data-cd="${p.opens_at}">${fmtLeft(p.opens_at - serverNow())}</span><span class="sub">${esc(fmtWhen(p.opens_at))}</span></div>`;
     if (p.solved) return `<a class="lock solved" href="#/lock/${p.num}"><span class="n">ЗАМОК №${p.num} · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span>

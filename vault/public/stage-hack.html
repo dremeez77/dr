@@ -96,9 +96,10 @@ const later = (fn, ms) => timers.push(setTimeout(fn, ms));
 
 function timeText() {
   if (!opensAt) return 'совсем скоро';
-  const d = new Date(opensAt), today = new Date().toDateString() === d.toDateString();
-  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return today ? `сегодня в ${hm}` : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + ` в ${hm}`;
+  const d = new Date(opensAt), TZ = { timeZone: 'Europe/Moscow' };
+  const today = d.toLocaleDateString('ru-RU', TZ) === new Date().toLocaleDateString('ru-RU', TZ);
+  const hm = d.toLocaleTimeString('ru-RU', { ...TZ, hour: '2-digit', minute: '2-digit' });
+  return today ? `сегодня в ${hm}` : d.toLocaleDateString('ru-RU', { ...TZ, day: 'numeric', month: 'long' }) + ` в ${hm}`;
 }
 
 // Звук синтезируется в браузере, файлы не нужны.

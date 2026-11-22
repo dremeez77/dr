@@ -49,7 +49,10 @@ function client(base) {
 
   // --- до входа и до открытия ничего не утекает ---
   let st = (await anon('/api/state')).body;
-  assert.deepEqual(st.puzzles.map(p => p.num), [1, 2], 'черновик не виден');
+  assert.deepEqual(st.puzzles.map(p => p.num), [1, 2, 3], 'черновой замок виден как закрытый');
+  const draft = st.puzzles.find(p => p.num === 3);
+  assert.equal(draft.open, false, 'черновик не открывается, даже когда время прошло');
+  assert.equal(draft.title, null, 'название черновика скрыто');
   assert.equal(st.puzzles[1].title, null, 'название закрытого замка скрыто');
   assert.ok(!JSON.stringify(st).includes('Секретный'), 'текст не утекает в состояние');
   assert.ok(!JSON.stringify(st).includes('Тюльпан'), 'ответ не утекает');

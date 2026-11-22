@@ -165,11 +165,13 @@ const route = (method, re, handler) => routes.push({ method, re, handler });
 
 route('GET', /^\/api\/state$/, ctx => {
   const t = now(), u = ctx.user;
-  const puzzles = q('SELECT * FROM puzzles WHERE published=1 ORDER BY num').all().map(p => {
-    const open = p.opens_at <= t;
+  // Черновые замки тоже показываем — как закрытые, с таймером, но без названия. Открыться они не могут,
+  // пока организатор не опубликует их (так замок №1 виден до шоу, хотя шифр в него вписывают после).
+  const puzzles = q("SELECT * FROM puzzles WHERE published=1 OR kind='lock' ORDER BY num").all().map(p => {
+    const open = p.published === 1 && p.opens_at <= t;
     const mine = u ? q('SELECT points, place FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) : null;
     return {
-      num: p.num, kind: p.kind, opens_at: p.opens_at, open,
+      num: p.num, kind: p.kind, opens_at: p.opens_at, open, draft: p.published !== 1,
       title: open ? p.title : null,
       max_points: p.max_points, min_points: p.min_points, decay_minutes: p.decay_minutes,
       solvers: open ? q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0').get(p.id).c : 0,
