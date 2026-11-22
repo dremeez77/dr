@@ -197,8 +197,31 @@ function paneSet() {
   $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Презентация открытия</b><p class="note">Открой <a href="/show" target="_blank">/show</a> на ноутбуке у сцены. Здесь — то, что покажется на слайдах.</p>
       <label>Команда: по одной строке «Имя — роль»</label><textarea id="st" style="min-height:110px;font-family:var(--sans)" placeholder="Даниил Максютов — ведущий">${esc(D.show_team)}</textarea>
       <label>Представитель ВТБ: имя и должность</label><input id="sv" value="${esc(D.show_vtb)}" placeholder="Иван Иванов, руководитель отделения">
+      <label>Фото команды (квадратные или портретные, лицо по центру)</label><div id="photos" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px"></div>
       <div class="bar"><button id="saveShow">Сохранить</button><span class="ok" id="sok"></span>${D.auction_price ? `<span>Цена аукциона с презентации: <b class="mono">${esc(D.auction_price)} ₽</b></span>` : ''}</div></div>`);
-  $('#saveShow').onclick = async () => { await api('/api/admin/settings', { show_team: $('#st').value, show_vtb: $('#sv').value }); $('#sok').textContent = 'Сохранено'; };
+  // Те же правила разбора, что и на слайде: строки или запятые, «Имя — роль».
+  const teamNames = () => $('#st').value.split(/\n|[,;](?=[^—–-]*[—–-])/).map(l => l.trim()).filter(Boolean).map(l => l.split(/\s*[—–-]\s+|\s+[—–-]\s*/)[0].trim());
+  const photos = { ...(D.show_photos || {}) };
+  const drawPhotos = () => {
+    $('#photos').innerHTML = teamNames().map((n, i) => `<div style="border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center">
+      <div style="width:84px;height:84px;border-radius:50%;margin:0 auto 8px;background:#0d1a4a center/cover no-repeat;${photos[n] ? `background-image:url('${esc(photos[n])}')` : ''}"></div>
+      <div style="font-size:13px;margin-bottom:6px">${esc(n)}</div>
+      <input type="file" accept="image/*" data-n="${esc(n)}" style="font-size:12px;padding:6px">
+      ${photos[n] ? `<button class="ghost small" data-del="${esc(n)}" style="margin-top:6px">Убрать фото</button>` : ''}</div>`).join('') || '<span class="note">Сначала впиши команду выше</span>';
+    document.querySelectorAll('#photos [data-n]').forEach(inp => inp.onchange = () => {
+      const f = inp.files[0]; if (!f) return;
+      const rd = new FileReader();
+      rd.onload = async () => {
+        try { const r = await api('/api/admin/upload', { name: f.name.replace(/\.jpeg$/i, '.jpg'), data: String(rd.result).split(',')[1] });
+          photos[inp.dataset.n] = r.url; await api('/api/admin/settings', { show_photos: photos }); drawPhotos(); $('#sok').textContent = 'Фото сохранено'; }
+        catch (e) { $('#sok').textContent = e.message; }
+      };
+      rd.readAsDataURL(f);
+    });
+    document.querySelectorAll('#photos [data-del]').forEach(b => b.onclick = async () => { delete photos[b.dataset.del]; await api('/api/admin/settings', { show_photos: photos }); drawPhotos(); });
+  };
+  drawPhotos(); $('#st').oninput = drawPhotos;
+  $('#saveShow').onclick = async () => { await api('/api/admin/settings', { show_team: $('#st').value, show_vtb: $('#sv').value, show_photos: photos }); $('#sok').textContent = 'Сохранено'; };
   const ABC = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
   const enc = () => { const key = $('#gk').value.replace(/\D/g, ''); let i = 0;
     $('#gc').value = key ? [...$('#gp').value].map(ch => { const k = ABC.indexOf(ch.toLowerCase()); return k < 0 ? ch.toUpperCase() : ABC[(k + Number(key[i++ % key.length])) % 33].toUpperCase(); }).join('') : ''; };

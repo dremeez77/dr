@@ -47,6 +47,7 @@
   @keyframes rise { from { opacity: 0; transform: translateY(calc(var(--u) * 2)); } to { opacity: 1; transform: none; } }
   .ava { width: calc(var(--u) * 9); height: calc(var(--u) * 9); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: calc(var(--u) * 2);
          font: 800 calc(var(--u) * 3)/1 var(--mono); color: #04102e; background: radial-gradient(circle at 35% 30%, #bfe9ff, var(--blue) 60%, #1487c0); box-shadow: 0 0 calc(var(--u) * 3) #19b5fe66; }
+  .ava.ph { width: calc(var(--u) * 13); height: calc(var(--u) * 13); background-size: cover; background-position: center 30%; border: calc(var(--u) * .35) solid var(--blue); }
   .member b { display: block; font-size: calc(var(--u) * 2.6); line-height: 1.15; }
   .member span { display: inline-block; font: 700 calc(var(--u) * 1.3)/1 var(--mono); color: var(--blue); letter-spacing: .14em; text-transform: uppercase; margin-top: calc(var(--u) * 1.4);
                  padding: calc(var(--u) * .8) calc(var(--u) * 1.4); border: calc(var(--u) * .12) solid #19b5fe55; border-radius: 99px; }
@@ -287,7 +288,8 @@ async function loadInfo() {
     });
     $('#team').style.gridTemplateColumns = `repeat(${Math.min(Math.max(team.length, 1), 4)}, 1fr)`;
     $('#team').innerHTML = team.map(t => { const ini = t.name.split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
-      return `<div class="member"><div class="ava">${esc(ini)}</div><b>${t.name.split(/\s+/).map(esc).join('<br>')}</b>${t.role ? `<span>${esc(t.role)}</span>` : ''}</div>`; }).join('');
+      const ph = (info.photos || {})[t.name];
+      return `<div class="member"><div class="ava${ph ? ' ph' : ''}"${ph ? ` style="background-image:url('${esc(ph)}')"` : ''}>${ph ? '' : esc(ini)}</div><b>${t.name.split(/\s+/).map(esc).join('<br>')}</b>${t.role ? `<span>${esc(t.role)}</span>` : ''}</div>`; }).join('');
     $('#vtb').textContent = info.vtb || '';
     if (info.first_lock) {
       const d = new Date(info.first_lock.opens_at), TZ = { timeZone: 'Europe/Moscow' };
