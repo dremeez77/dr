@@ -148,7 +148,7 @@ function boardHtml(limit) {
   if (mine && !rows.includes(mine)) rows = rows.concat(mine);
   return `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}${hasWarm ? '<th class="r" title="Разминки">Р</th>' : ''}<th class="r">Итого</th></tr></thead><tbody>${
     rows.map(r => `<tr class="${r.id === myId ? 'me-row' : ''}"><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td>
-      <td class="nick">${esc(r.nick)} <span class="grp">${esc(r.group)}</span></td>
+      <td class="nick">${esc(r.nick)}${r.curious ? ' <span title="Любопытный: нашёл секретный замок">🗝</span>' : ''} <span class="grp">${esc(r.group)}</span></td>
       ${nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}${hasWarm ? `<td class="r">${r.warm || '<span class="muted">·</span>'}</td>` : ''}
       <td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b>${r.total}</b></td></tr>`).join('')
   }</tbody></table></div>`;
@@ -341,6 +341,32 @@ function tick() {
   }
   if (reload && !tick.busy) { tick.busy = true; setTimeout(async () => { await refresh(); tick.busy = false; }, 1200); }
 }
+
+// ---------- Пасхалки ----------
+// 1. Сообщение в консоли браузера — последняя ступень цепочки к секретному замку.
+console.log('%c ХРАНИЛИЩЕ ', 'background:#19b5fe;color:#04102e;font:800 16px monospace;padding:4px 8px;border-radius:4px');
+console.log('%cТы открыл консоль. Значит, ты из тех, кто смотрит глубже.\nСлово для /keeper: ЛЮБОПЫТСТВО\n— Х.', 'color:#19b5fe;font:600 13px monospace;line-height:1.6');
+function keeperToast(text, glitch) {
+  if (glitch) { document.body.classList.add('glitching'); setTimeout(() => document.body.classList.remove('glitching'), 700); }
+  const t = document.createElement('div'); t.className = 'keeper-toast'; t.textContent = text; document.body.appendChild(t);
+  setTimeout(() => t.classList.add('out'), 2600); setTimeout(() => t.remove(), 3200);
+}
+// 2. Семь кликов по шару подряд.
+let orbClicks = [], orbBusy = false;
+document.addEventListener('click', e => {
+  const o = e.target.closest('.orb-wrap'); if (!o || orbBusy) return;
+  const t = Date.now(); orbClicks = orbClicks.filter(x => t - x < 2500); orbClicks.push(t);
+  o.classList.remove('tap'); void o.offsetWidth; o.classList.add('tap');
+  if (orbClicks.length >= 7) { orbClicks = []; orbBusy = true; o.classList.add('cracked'); keeperToast('Сила — не метод. Думай. — Х.');
+    setTimeout(() => { o.classList.remove('cracked'); orbBusy = false; }, 2400); }
+});
+// 3. Набрать на клавиатуре «хранитель» (в русской или английской раскладке).
+let typed = '';
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea') || e.key.length !== 1) return;
+  typed = (typed + e.key.toLowerCase()).slice(-9);
+  if (typed === 'хранитель' || typed === '[hfybntkm') { typed = ''; keeperToast('Ты меня звал? — Х.', true); }
+});
 
 window.addEventListener('hashchange', go);
 (async () => {

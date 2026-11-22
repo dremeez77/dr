@@ -42,6 +42,11 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const UPLOAD_DIR = path.join(cfg.dataDir, 'uploads');
 
 const db = openDb(cfg.dataDir);
+// Пасхалка: секретный замок №9. Не показывается среди замков, найти его можно только по цепочке
+// robots.txt → /keeper → консоль браузера. Даёт фиксированные 15 баллов и значок «Любопытный».
+const SECRET_NUM = 9, SECRET_WORD = 'любопытство';
+db.prepare(`INSERT OR IGNORE INTO puzzles(num,kind,title,body,opens_at,max_points,min_points,decay_minutes,answers,hints,published,notified_open,notified_soon)
+  VALUES(?, 'secret', 'Секретный замок', '', 0, 15, 15, 1, ?, '[]', 1, 1, 1)`).run(SECRET_NUM, JSON.stringify([SECRET_WORD, 'любопытство.']));
 const q = sql => db.prepare(sql);
 const now = () => Date.now();
 const rand = n => crypto.randomBytes(n).toString('hex');
@@ -167,7 +172,7 @@ route('GET', /^\/api\/state$/, ctx => {
   const t = now(), u = ctx.user;
   // Черновые замки тоже показываем — как закрытые, с таймером, но без названия. Открыться они не могут,
   // пока организатор не опубликует их (так замок №1 виден до шоу, хотя шифр в него вписывают после).
-  const puzzles = q("SELECT * FROM puzzles WHERE published=1 OR kind='lock' ORDER BY num").all().map(p => {
+  const puzzles = q("SELECT * FROM puzzles WHERE (published=1 OR kind='lock') AND kind<>'secret' ORDER BY num").all().map(p => {
     const open = p.published === 1 && p.opens_at <= t;
     const mine = u ? q('SELECT points, place FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) : null;
     return {
@@ -188,9 +193,10 @@ route('GET', /^\/api\/leaderboard$/, () => {
                   FROM solves s JOIN users u ON u.id=s.user_id WHERE u.banned=0
                   GROUP BY u.id ORDER BY total DESC, last ASC`).all();
   const rows = all.filter(r => !r.is_staff), staffRows = all.filter(r => r.is_staff);
-  const per = {}, warm = {};
+  const per = {}, warm = {}, secret = {};
   for (const r of q('SELECT s.user_id, p.num, p.kind, s.points, s.place FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
-    if (r.kind === 'warmup') warm[r.user_id] = (warm[r.user_id] || 0) + r.points;
+    if (r.kind === 'secret') secret[r.user_id] = true;
+    else if (r.kind === 'warmup') warm[r.user_id] = (warm[r.user_id] || 0) + r.points;
     else (per[r.user_id] = per[r.user_id] || {})[r.num] = { points: r.points, place: r.place };
   }
   // Зачёт групп: сумма баллов пяти лучших игроков. «Ф-21», «ф 21» и «Ф21» считаются одной группой.
@@ -210,7 +216,7 @@ route('GET', /^\/api\/leaderboard$/, () => {
     players: q('SELECT COUNT(*) c FROM users WHERE nick IS NOT NULL AND banned=0').get().c,
     groups,
     staff: staffRows.slice(0, 50).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total })),
-    rows: rows.slice(0, 200).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total, locks: per[r.id] || {}, warm: warm[r.id] || 0 })),
+    rows: rows.slice(0, 200).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total, locks: per[r.id] || {}, warm: warm[r.id] || 0, curious: !!secret[r.id] })),
   };
 });
 
@@ -307,10 +313,12 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
   const hints = parse(p.hints, []);
   const hintCost = hints.slice(0, hintsUsed(u.id, p.id)).reduce((s, h) => s + (Number(h.cost) || 0), 0);
   // Разминка стоит одинаково для всех: без скорости, бонусов и штрафов.
-  const points = p.kind === 'warmup' ? p.max_points
+  const points = p.kind === 'warmup' || p.kind === 'secret' ? p.max_points
     : finalPoints({ timePts: timeValue(p, t - p.opens_at), place, wrong: wrongCount(u.id, p.id), hintCost });
   q('INSERT INTO solves(user_id,puzzle_id,solved_at,points,place) VALUES(?,?,?,?,?)').run(u.id, p.id, t, points, place);
-  if (p.kind !== 'warmup' && u.is_staff) {
+  if (p.kind === 'secret') {
+    keeper(`Кто-то нашёл то, что я не показывал. ${u.nick} теперь «Любопытный». Остальные даже не знают, о чём я.`);
+  } else if (p.kind !== 'warmup' && u.is_staff) {
     const students = q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0 AND u.is_staff=0').get(p.id).c;
     if (place === 1) keeper(students
       ? `Преподаватели вступили в игру: ${u.nick} открыл замок №${p.num}.`
@@ -423,7 +431,7 @@ const quizFresh = () => ({ phase: 'idle', idx: -1, endsAt: 0, startedAt: 0, play
 let quiz = parse(kvGet('quiz'), null) || quizFresh();
 let quizDirty = false;
 const saveQuiz = () => { quizDirty = true; };
-setInterval(() => { if (quizDirty) { quizDirty = false; kvSet('quiz', JSON.stringify(quiz)); } }, 1000).unref();
+setInterval(() => { if (quizDirty) { quizDirty = false; try { kvSet('quiz', JSON.stringify(quiz)); } catch { /* база закрыта при остановке */ } } }, 1000).unref();
 const QUIZ_MS = (QUIZ.seconds || 20) * 1000;
 const quizTop = n => Object.entries(quiz.players).map(([id, p]) => ({ id, name: p.name, score: p.score }))
   .sort((a, b) => b.score - a.score).slice(0, n).map((p, i) => ({ rank: i + 1, ...p }));
@@ -531,8 +539,8 @@ route('POST', /^\/api\/admin\/puzzle$/, async ctx => {
   const answers = (b.answers || []).map(a => String(a).trim()).filter(Boolean);
   if (b.published && !answers.length) fail(400, 'Нельзя публиковать замок без ответа');
   const hints = (b.hints || []).filter(h => h && String(h.text || '').trim()).map(h => ({ text: String(h.text).trim(), cost: Math.max(0, Number(h.cost) || 0) }));
-  const kind = b.kind === 'warmup' ? 'warmup' : 'lock';
-  const max = Math.max(1, Number(b.max_points) || 100), min = kind === 'warmup' ? max : Math.min(max, Math.max(0, Number(b.min_points) || 0));
+  const kind = ['warmup', 'secret'].includes(b.kind) ? b.kind : 'lock';
+  const max = Math.max(1, Number(b.max_points) || 100), min = kind !== 'lock' ? max : Math.min(max, Math.max(0, Number(b.min_points) || 0));
   const vals = [String(b.title).trim(), String(b.body || ''), opens, max, min, Math.max(1, Number(b.decay_minutes) || 720),
     JSON.stringify(answers), JSON.stringify(hints), b.published ? 1 : 0];
   const old = q('SELECT * FROM puzzles WHERE num=?').get(num);
@@ -658,7 +666,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html' };
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));
@@ -693,7 +701,11 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith('/uploads/')) {
       if (serveFile(res, UPLOAD_DIR, pathname.slice('/uploads/'.length))) return;
     } else if (serveFile(res, PUBLIC_DIR, PAGES[pathname] || pathname.slice(1))) return;
-    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Страница не найдена');
+    // Страница «не найдено» от Хранителя
+    const nf = path.join(PUBLIC_DIR, '404.html');
+    res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(nf).on('error', () => res.end('Страница не найдена')).pipe(res);
   } catch (e) {
     if (e instanceof HttpError) return send(res, e.code, { error: e.message, ...(e.extra || {}) });
     console.error(e);

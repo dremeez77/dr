@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Тебя сюда не звали</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .box { max-width: 520px; padding: 28px 20px; position: relative; z-index: 1; }
+  .k { font: 700 12px/1 var(--mono); letter-spacing: .3em; color: var(--muted); }
+  h1 { font: 700 30px/1.25 var(--mono); margin: 16px 0; color: var(--gold); text-shadow: 0 0 18px rgba(25,181,254,.5); }
+  p { font: 500 17px/1.6 var(--mono); color: #d5def3; }
+  .line { min-height: 1.6em; }
+  .cur::after { content: "█"; animation: b 1s steps(1) infinite; margin-left: 4px; color: var(--gold); }
+  @keyframes b { 50% { opacity: 0; } }
+  form { margin-top: 26px; display: flex; gap: 10px; } form input { font-family: var(--mono); }
+  .msg { margin-top: 14px; font-family: var(--mono); min-height: 22px; }
+  .badge { margin-top: 22px; padding: 18px; border: 1px solid rgba(61,220,132,.5); border-radius: 14px; background: rgba(61,220,132,.07); font-family: var(--mono); }
+  @media (max-width: 520px) { form { flex-direction: column; } }
+</style>
+</head>
+<body class="deco">
+<div class="box">
+  <div class="k">ХРАНИЛИЩЕ · /KEEPER</div>
+  <h1 id="h"></h1>
+  <div id="lines"></div>
+  <div id="act"></div>
+</div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const LINES = [
+  'Ты зашёл туда, куда роботам нельзя.',
+  'Значит, ты не робот. Уже неплохо.',
+  'Здесь лежит пятый замок. О нём не знает никто.',
+  'Слово спрятано там, где разработчики разговаривают с браузером.',
+];
+function type(el, text, done) { let i = 0; el.classList.add('cur'); (function s() { el.textContent = text.slice(0, ++i); if (i < text.length) setTimeout(s, 28); else { el.classList.remove('cur'); done && done(); } })(); }
+function run(i) {
+  if (i >= LINES.length) return form();
+  const p = document.createElement('p'); p.className = 'line'; $('#lines').appendChild(p);
+  setTimeout(() => type(p, LINES[i], () => run(i + 1)), 350);
+}
+async function form() {
+  let st = null; try { st = await (await fetch('/api/state')).json(); } catch {}
+  if (!st || !st.user || !st.user.nick) { $('#act').innerHTML = `<p class="muted" style="margin-top:24px">Сначала <a href="/">войди в игру</a>. Потом возвращайся.</p>`; return; }
+  const pz = await fetch('/api/puzzle/9').then(r => r.json()).catch(() => ({}));
+  if (pz.solved) { badge(pz.solved.points, pz.solved.place); return; }
+  $('#act').innerHTML = `<form id="f"><input id="w" placeholder="Слово" autocomplete="off" spellcheck="false" maxlength="60"><button>Открыть</button></form><div class="msg" id="m"></div>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    const r = await fetch('/api/puzzle/9/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answer: $('#w').value }) });
+    const j = await r.json().catch(() => ({}));
+    if (j.correct) badge(j.points, j.place);
+    else $('#m').innerHTML = `<span class="red">${esc(j.error || 'Не то слово.')}</span>`;
+  };
+}
+function badge(points, place) {
+  $('#act').innerHTML = `<div class="badge"><b class="green">🗝 Значок «Любопытный»</b><br><span class="muted">+${points} баллов. Ты ${place}-й, кто сюда добрался. Никому не рассказывай — пусть ищут сами.</span></div>
+    <p style="margin-top:18px"><a href="/">← Вернуться к замкам</a></p>`;
+}
+type($('#h'), 'Тебя сюда не звали.', () => run(0));
+</script>
+</body>
+</html>

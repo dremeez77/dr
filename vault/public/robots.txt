@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /admin
+Disallow: /keeper
+
+# Роботам сюда нельзя. А тебе?

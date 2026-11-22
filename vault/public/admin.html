@@ -68,7 +68,7 @@ function paneP() {
   if (editing) return editP(editing);
   $('#pane').innerHTML = `
     <div class="tbl-scroll"><table class="tbl"><thead><tr><th>№</th><th>Название</th><th>Открытие</th><th>Баллы</th><th>Статус</th><th class="r">Решили</th><th class="r">Попыток</th><th></th></tr></thead><tbody>
-    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : ''}</td><td>${when(p.opens_at)}</td>
+    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : p.kind === 'secret' ? ' <span class="muted">· пасхалка, на сайте не видна</span>' : ''}</td><td>${when(p.opens_at)}</td>
       <td class="mono">${p.max_points}→${p.min_points} за ${p.decay_minutes} мин</td>
       <td>${!p.published ? '<span class="muted">черновик</span>' : p.opens_at <= D.now ? '<span class="green">открыт</span>' : '<span class="gold">ждёт</span>'}</td>
       <td class="r">${p.solvers}</td><td class="r">${p.tries}</td><td><button class="ghost small" data-edit="${p.num}">Изменить</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Замков пока нет</td></tr>'}
@@ -90,7 +90,7 @@ function editP(p) {
   $('#pane').innerHTML = `<div class="card">
     <div class="grid">
       <div><label>Номер</label><input id="num" type="number" min="1" value="${p.num}" ${p.isNew ? '' : 'disabled'}></div>
-      <div><label>Тип</label><select id="kind"><option value="lock">Замок</option><option value="warmup" ${p.kind === 'warmup' ? 'selected' : ''}>Разминка</option></select></div>
+      <div><label>Тип</label><select id="kind"><option value="lock">Замок</option><option value="warmup" ${p.kind === 'warmup' ? 'selected' : ''}>Разминка</option><option value="secret" ${p.kind === 'secret' ? 'selected' : ''}>Секрет (пасхалка)</option></select></div>
       <div style="grid-column: span 2"><label>Название (видно после открытия)</label><input id="title" value="${esc(p.title)}"></div>
       <div><label>Открывается</label><input id="opens" type="datetime-local" value="${toLocal(p.opens_at)}"></div>
     </div>

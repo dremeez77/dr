@@ -166,3 +166,18 @@ body.deco::after { content: ""; position: fixed; left: 50%; top: -260px; width: 
 @media (max-width: 520px) { .orb-wrap { width: 150px; height: 150px; } .orbit { width: 220px; height: 60px; margin: -30px 0 0 -110px; } .orbit.o2 { width: 190px; height: 190px; margin: -95px 0 0 -95px; }
   .tile { min-width: 58px; } .tile b { font-size: 24px; } }
 @media (prefers-reduced-motion: reduce) { .orb, .orbit, .pulse-dot { animation: none !important; } }
+
+/* ---------- Пасхалки ---------- */
+.orb-wrap { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.orb-wrap.tap .orb { animation: tap .25s ease; }
+@keyframes tap { 50% { transform: scale(.96); } }
+.orb-wrap.cracked .keyhole { animation: unlock 1.2s ease; }
+.orb-wrap.cracked .orb { animation: flash 1.2s ease; }
+@keyframes unlock { 40% { transform: translate(-50%, -50%) rotate(-90deg); } 70% { transform: translate(-50%, -50%) rotate(-90deg); } 100% { transform: translate(-50%, -50%) rotate(0); } }
+@keyframes flash { 30% { box-shadow: 0 0 120px #fff, 0 0 240px #19b5fe, inset -16px -24px 50px #000c; filter: brightness(1.6); } }
+.keeper-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 20; padding: 14px 20px; border-radius: 14px;
+  background: #050b26ee; border: 1px solid var(--gold); color: var(--gold); font: 700 15px/1.3 var(--mono); box-shadow: 0 0 30px rgba(25,181,254,.35);
+  transition: opacity .5s, transform .5s; max-width: calc(100vw - 32px); text-align: center; }
+.keeper-toast.out { opacity: 0; transform: translate(-50%, 10px); }
+body.glitching .wrap { animation: glitch .12s steps(2) 5; }
+@keyframes glitch { 0% { transform: translate(0); filter: none; } 50% { transform: translate(-6px, 2px) skewX(-4deg); filter: hue-rotate(90deg) contrast(1.6); } 100% { transform: translate(5px, -2px); filter: invert(.9); } }
