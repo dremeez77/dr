@@ -57,11 +57,11 @@
   .r span { display: block; font-size: calc(var(--u) * 1.9); color: #d5def3; margin-top: calc(var(--u) * .8); line-height: 1.35; }
 
   /* Финал */
-  .end { display: grid; grid-template-columns: auto 1fr; gap: calc(var(--u) * 5); align-items: center; text-align: left; max-width: calc(var(--u) * 140); }
-  .qr { background: #fff; padding: calc(var(--u) * 1.4); border-radius: calc(var(--u) * 1.6); width: calc(var(--u) * 30); }
+  .end { display: grid; grid-template-columns: auto 1fr; gap: calc(var(--u) * 5); align-items: center; text-align: left; max-width: calc(var(--u) * 140); margin-bottom: calc(var(--u) * 4); }
+  .qr { background: #fff; padding: calc(var(--u) * 1.3); border-radius: calc(var(--u) * 1.6); width: calc(var(--u) * 27); }
   .qr svg { display: block; width: 100%; height: auto; }
   .url { font: 800 calc(var(--u) * 3)/1.2 var(--mono); color: var(--blue); margin-top: calc(var(--u) * 1.5); overflow-wrap: anywhere; }
-  .cd { font: 900 calc(var(--u) * 9)/1 var(--mono); color: var(--blue); font-variant-numeric: tabular-nums; margin-top: calc(var(--u) * 1); }
+  .cd { font: 900 calc(var(--u) * 6.4)/1 var(--mono); color: var(--blue); font-variant-numeric: tabular-nums; margin-top: calc(var(--u) * 1.5); white-space: nowrap; }
   .partner { position: absolute; bottom: calc(var(--u) * 3); left: 0; right: 0; font: 700 calc(var(--u) * 1.3)/1 var(--mono); letter-spacing: .26em; color: var(--muted); }
 
   /* Служебное: видно только технику */
@@ -139,9 +139,9 @@
     <div><div class="qr" id="qrEnd"></div><div class="url" id="urlEnd"></div></div>
     <div>
       <div class="kicker">Хранилище</div>
-      <h1 style="font-size:calc(var(--u)*6);margin:calc(var(--u)*1.5) 0">Замок №1 откроется<br><span class="blue" id="whenEnd">сегодня в 20:00</span></h1>
+      <h1 style="font-size:calc(var(--u)*5);margin:calc(var(--u)*1.5) 0">Замок №1 откроется<br><span class="blue" id="whenEnd" style="white-space:nowrap">сегодня в 20:00</span></h1>
       <div class="cd" id="cdEnd">--:--:--</div>
-      <p class="sub" style="margin-top:calc(var(--u)*2);text-align:left">Сканируй код и войди через ВКонтакте. Бот напишет, когда замок откроется.</p>
+      <p class="sub" style="margin-top:calc(var(--u)*2.4);text-align:left;font-size:calc(var(--u)*2)">Сканируй код и войди через ВКонтакте. Бот напишет, когда замок откроется.</p>
       <p class="sub" style="margin-top:calc(var(--u)*1.5);text-align:left;color:var(--muted);font-size:calc(var(--u)*1.8)">Не открывается? Выключи VPN на минуту.</p>
     </div>
   </div>
@@ -299,7 +299,7 @@ setInterval(() => {
   const ms = info.first_lock.opens_at - (Date.now() + offset), el = $('#cdEnd');
   if (ms <= 0) { el.textContent = 'ОТКРЫТ'; return; }
   const s = Math.floor(ms / 1000), p = n => String(n).padStart(2, '0'), d = Math.floor(s / 86400);
-  el.textContent = (d ? d + ' д ' : '') + `${p(Math.floor(s % 86400 / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
+  el.textContent = (d ? d + 'д ' : '') + `${p(Math.floor(s % 86400 / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
 }, 250);
 
 loadInfo().then(() => show(0));
