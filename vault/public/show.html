@@ -47,6 +47,14 @@
   @keyframes rise { from { opacity: 0; transform: translateY(calc(var(--u) * 2)); } to { opacity: 1; transform: none; } }
   .ava { width: calc(var(--u) * 9); height: calc(var(--u) * 9); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: calc(var(--u) * 2);
          font: 800 calc(var(--u) * 3)/1 var(--mono); color: #04102e; background: radial-gradient(circle at 35% 30%, #bfe9ff, var(--blue) 60%, #1487c0); box-shadow: 0 0 calc(var(--u) * 3) #19b5fe66; }
+  .slide.grp h1 { font-size: calc(var(--u) * 6); margin: calc(var(--u) * 1.4) 0 0; } .slide.grp .sub { display: none; }
+  .team-group { width: 100%; max-width: calc(var(--u) * 96); margin-top: calc(var(--u) * 2.4); animation: rise .7s ease both; }
+  .gphoto { width: 100%; height: calc(var(--u) * 27); border-radius: calc(var(--u) * 2); background-size: cover; background-position: center 35%;
+            border: calc(var(--u) * .2) solid var(--line); box-shadow: 0 calc(var(--u) * 2) calc(var(--u) * 6) #000a, 0 0 calc(var(--u) * 5) #19b5fe33; }
+  .gnames { display: flex; justify-content: space-around; gap: calc(var(--u) * 2); margin-top: calc(var(--u) * 2.2); }
+  .gnames b { display: block; font-size: calc(var(--u) * 2.3); }
+  .gnames span { display: inline-block; margin-top: calc(var(--u) * .9); font: 700 calc(var(--u) * 1.2)/1 var(--mono); color: var(--blue); letter-spacing: .14em; text-transform: uppercase;
+                 padding: calc(var(--u) * .7) calc(var(--u) * 1.2); border: calc(var(--u) * .12) solid #19b5fe55; border-radius: 99px; }
   .ava.ph { width: calc(var(--u) * 13); height: calc(var(--u) * 13); background-size: cover; background-position: center 30%; border: calc(var(--u) * .35) solid var(--blue); }
   .member b { display: block; font-size: calc(var(--u) * 2.6); line-height: 1.15; }
   .member span { display: inline-block; font: 700 calc(var(--u) * 1.3)/1 var(--mono); color: var(--blue); letter-spacing: .14em; text-transform: uppercase; margin-top: calc(var(--u) * 1.4);
@@ -286,10 +294,17 @@ async function loadInfo() {
     const team = info.team.split(/\n|[,;](?=[^—–-]*[—–-])/).map(l => l.trim()).filter(Boolean).map(l => {
       const m = l.split(/\s*[—–-]\s+|\s+[—–-]\s*/); return { name: m[0].trim(), role: m.slice(1).join(' — ').trim() };
     });
+    if (info.group) {
+      // Общее фото: большая карточка-фото, под ней имена и роли в одну строку.
+      $('#team').className = 'team-group'; $('#team').closest('.slide').classList.add('grp');
+      $('#team').innerHTML = `<div class="gphoto" style="background-image:url('${esc(info.group)}')"></div>
+        <div class="gnames">${team.map(t => `<div><b>${esc(t.name)}</b>${t.role ? `<span>${esc(t.role)}</span>` : ''}</div>`).join('')}</div>`;
+    } else {
     $('#team').style.gridTemplateColumns = `repeat(${Math.min(Math.max(team.length, 1), 4)}, 1fr)`;
     $('#team').innerHTML = team.map(t => { const ini = t.name.split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
       const ph = (info.photos || {})[t.name];
       return `<div class="member"><div class="ava${ph ? ' ph' : ''}"${ph ? ` style="background-image:url('${esc(ph)}')"` : ''}>${ph ? '' : esc(ini)}</div><b>${t.name.split(/\s+/).map(esc).join('<br>')}</b>${t.role ? `<span>${esc(t.role)}</span>` : ''}</div>`; }).join('');
+    }
     $('#vtb').textContent = info.vtb || '';
     if (info.first_lock) {
       const d = new Date(info.first_lock.opens_at), TZ = { timeZone: 'Europe/Moscow' };

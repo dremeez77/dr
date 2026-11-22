@@ -517,7 +517,7 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
     bots: { tg: !!cfg.tgToken, vk: !!cfg.vkToken },
     trap_count: Number(kvGet('trap_count') || 0),
     final_question: kvGet('final_question') || '', final_answer: kvGet('final_answer') || '',
-    show_team: kvGet('show_team') || '', show_vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '', show_photos: parse(kvGet('show_photos'), {}),
+    show_team: kvGet('show_team') || '', show_vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '', show_photos: parse(kvGet('show_photos'), {}), show_group: kvGet('show_group') || '',
     puzzles: q('SELECT * FROM puzzles ORDER BY num').all().map(p => ({
       ...p, answers: parse(p.answers, []), hints: parse(p.hints, []),
       solvers: q('SELECT COUNT(*) c FROM solves WHERE puzzle_id=?').get(p.id).c,
@@ -634,6 +634,8 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
     const ph = {}; for (const [k, v] of Object.entries(b.show_photos)) if (/^\/uploads\/[0-9a-f]{20}\.(png|jpe?g|webp|gif)$/.test(String(v))) ph[String(k).slice(0, 60)] = String(v);
     kvSet('show_photos', JSON.stringify(ph));
   }
+  // Общее фото команды: если задано, слайд «Кто мы» показывает его вместо карточек.
+  if (b.show_group !== undefined) kvSet('show_group', /^\/uploads\/[0-9a-f]{20}\.(png|jpe?g|webp)$/.test(String(b.show_group)) ? String(b.show_group) : '');
   if (b.final_answer !== undefined) kvSet('final_answer', String(b.final_answer));
   return { ok: true };
 });
@@ -652,7 +654,7 @@ route('GET', /^\/api\/admin\/show$/, ctx => {
   const t = now();
   const first = q("SELECT num, opens_at, published FROM puzzles WHERE kind='lock' AND opens_at>? ORDER BY opens_at LIMIT 1").get(t)
     || q("SELECT num, opens_at, published FROM puzzles WHERE kind='lock' ORDER BY opens_at LIMIT 1").get();
-  return { team: kvGet('show_team') || '', vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '', photos: parse(kvGet('show_photos'), {}),
+  return { team: kvGet('show_team') || '', vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '', photos: parse(kvGet('show_photos'), {}), group: kvGet('show_group') || '',
     trap_count: Number(kvGet('trap_count') || 0), story_phase: story.phase, first_lock: first || null,
     base_url: cfg.baseUrl, vk: !!cfg.vkToken };
 });

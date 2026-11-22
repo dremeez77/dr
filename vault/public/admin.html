@@ -197,7 +197,10 @@ function paneSet() {
   $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Презентация открытия</b><p class="note">Открой <a href="/show" target="_blank">/show</a> на ноутбуке у сцены. Здесь — то, что покажется на слайдах.</p>
       <label>Команда: по одной строке «Имя — роль»</label><textarea id="st" style="min-height:110px;font-family:var(--sans)" placeholder="Даниил Максютов — ведущий">${esc(D.show_team)}</textarea>
       <label>Представитель ВТБ: имя и должность</label><input id="sv" value="${esc(D.show_vtb)}" placeholder="Иван Иванов, руководитель отделения">
-      <label>Фото команды (квадратные или портретные, лицо по центру)</label><div id="photos" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px"></div>
+      <label>Общее фото команды (горизонтальное). Если загружено, слайд покажет его вместо карточек</label>
+      <div class="bar" style="margin-top:0"><div id="grpPrev" style="width:200px;height:112px;border-radius:10px;border:1px solid var(--line);background:#0d1a4a center/cover no-repeat"></div>
+        <input type="file" id="grpFile" accept="image/*" style="max-width:260px"><button class="ghost small" id="grpDel">Убрать общее фото</button></div>
+      <label>Или фото по отдельности (квадратные или портретные, лицо по центру)</label><div id="photos" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px"></div>
       <div class="bar"><button id="saveShow">Сохранить</button><span class="ok" id="sok"></span>${D.auction_price ? `<span>Цена аукциона с презентации: <b class="mono">${esc(D.auction_price)} ₽</b></span>` : ''}</div></div>`);
   // Те же правила разбора, что и на слайде: строки или запятые, «Имя — роль».
   const teamNames = () => $('#st').value.split(/\n|[,;](?=[^—–-]*[—–-])/).map(l => l.trim()).filter(Boolean).map(l => l.split(/\s*[—–-]\s+|\s+[—–-]\s*/)[0].trim());
@@ -221,6 +224,20 @@ function paneSet() {
     document.querySelectorAll('#photos [data-del]').forEach(b => b.onclick = async () => { delete photos[b.dataset.del]; await api('/api/admin/settings', { show_photos: photos }); drawPhotos(); });
   };
   drawPhotos(); $('#st').oninput = drawPhotos;
+  let group = D.show_group || '';
+  const drawGroup = () => { $('#grpPrev').style.backgroundImage = group ? `url('${group}')` : 'none'; $('#grpDel').style.display = group ? '' : 'none'; };
+  drawGroup();
+  $('#grpFile').onchange = () => {
+    const f = $('#grpFile').files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = async () => {
+      try { const r = await api('/api/admin/upload', { name: f.name.replace(/\.jpeg$/i, '.jpg'), data: String(rd.result).split(',')[1] });
+        group = r.url; await api('/api/admin/settings', { show_group: group }); drawGroup(); $('#sok').textContent = 'Общее фото сохранено'; }
+      catch (e) { $('#sok').textContent = e.message; }
+    };
+    rd.readAsDataURL(f);
+  };
+  $('#grpDel').onclick = async () => { group = ''; await api('/api/admin/settings', { show_group: '' }); drawGroup(); };
   $('#saveShow').onclick = async () => { await api('/api/admin/settings', { show_team: $('#st').value, show_vtb: $('#sv').value, show_photos: photos }); $('#sok').textContent = 'Сохранено'; };
   const ABC = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
   const enc = () => { const key = $('#gk').value.replace(/\D/g, ''); let i = 0;
