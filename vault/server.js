@@ -44,9 +44,10 @@ const UPLOAD_DIR = path.join(cfg.dataDir, 'uploads');
 const db = openDb(cfg.dataDir);
 // Пасхалка: секретный замок №9. Не показывается среди замков, найти его можно только по цепочке
 // robots.txt → /keeper → консоль браузера. Даёт фиксированные 15 баллов и значок «Любопытный».
-const SECRET_NUM = 9, SECRET_WORD = 'любопытство';
-db.prepare(`INSERT OR IGNORE INTO puzzles(num,kind,title,body,opens_at,max_points,min_points,decay_minutes,answers,hints,published,notified_open,notified_soon)
-  VALUES(?, 'secret', 'Секретный замок', '', 0, 15, 15, 1, ?, '[]', 1, 1, 1)`).run(SECRET_NUM, JSON.stringify([SECRET_WORD, 'любопытство.']));
+// Ответ задаётся в .env (SECRET_WORD) и в коде не хранится: репозиторий открытый. На сервере замок уже лежит в базе.
+const SECRET_NUM = 9, SECRET_WORD = String(env.SECRET_WORD || '').trim();
+if (SECRET_WORD) db.prepare(`INSERT OR IGNORE INTO puzzles(num,kind,title,body,opens_at,max_points,min_points,decay_minutes,answers,hints,published,notified_open,notified_soon)
+  VALUES(?, 'secret', 'Секретный замок', '', 0, 15, 15, 1, ?, '[]', 1, 1, 1)`).run(SECRET_NUM, JSON.stringify([SECRET_WORD]));
 const q = sql => db.prepare(sql);
 const now = () => Date.now();
 const rand = n => crypto.randomBytes(n).toString('hex');

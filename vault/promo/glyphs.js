@@ -30,7 +30,7 @@ function glyphInner(i, color = 'currentColor') {
 }
 const glyph = (i, color) => `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${glyphInner(i, color)}</svg>`;
 
-/** Эмблема: замочная скважина в круге с четырьмя засечками — по числу замков. */
+/** Эмблема: замок в круге с четырьмя засечками — по числу замков. */
 function emblem(color = 'currentColor', stroke = 5) {
   return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round">
     <circle cx="100" cy="100" r="72"/>

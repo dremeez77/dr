@@ -146,8 +146,8 @@ function client(base) {
   assert.equal((await v1('/api/story')).body.debt, 0);
 
   // --- разминка, зачёт групп и преподаватели ---
-  await admin('/api/admin/puzzle', { num: 11, kind: 'warmup', title: 'Разминка', body: 'x', opens_at: t - 1000, max_points: 10, min_points: 3, answers: ['292'], hints: [], published: true });
-  const w = await a('/api/puzzle/11/answer', { answer: '292' });
+  await admin('/api/admin/puzzle', { num: 11, kind: 'warmup', title: 'Разминка', body: 'x', opens_at: t - 1000, max_points: 10, min_points: 3, answers: ['777'], hints: [], published: true });
+  const w = await a('/api/puzzle/11/answer', { answer: '777' });
   assert.equal(w.body.points, 10, 'разминка стоит ровно 10 без бонусов');
   await admin('/api/admin/ban', { id: bobId, banned: false });
   const tc = client(base); await tc('/api/auth/dev', { name: 'teacher' });
