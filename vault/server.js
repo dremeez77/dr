@@ -738,6 +738,86 @@ route('POST', /^\/api\/quiz\/control$/, async ctx => {
   return { phase: quiz.phase, idx: quiz.idx };
 });
 
+// --- Игра «Сделка»: команды голосуют с телефонов ---
+// Каждый участник выбирает команду и голосует за решение по заявке. Решение команды — большинство её голосов
+// (при равенстве — более осторожное). Баллы за решения заданы в deal.json. Состояние живёт в памяти и в kv.
+const DEAL = JSON.parse(fs.readFileSync(path.join(__dirname, 'deal.json'), 'utf8'));
+const DEAL_MS = (DEAL.seconds || 300) * 1000;
+const dealFresh = () => ({ phase: 'idle', idx: -1, endsAt: 0, players: {}, votes: {}, scores: {}, bonus: {}, log: [] });
+let deal = parse(kvGet('deal'), null) || dealFresh();
+let dealDirty = false;
+setInterval(() => { if (dealDirty) { dealDirty = false; try { kvSet('deal', JSON.stringify(deal)); } catch { /* база закрыта */ } } }, 1000).unref();
+const dealTeams = () => Array.from({ length: DEAL.teams || 4 }, (_, i) => i + 1);
+function dealTally() {
+  // По каждой команде: сколько голосов за каждый вариант, решение и баллы за текущую заявку.
+  const app = DEAL.apps[deal.idx];
+  return dealTeams().map(t => {
+    const ids = Object.keys(deal.players).filter(id => deal.players[id].team === t);
+    const counts = [0, 0, 0]; for (const id of ids) if (deal.votes[id] !== undefined) counts[deal.votes[id]]++;
+    const voted = counts.reduce((a, b) => a + b, 0);
+    let decision = null;
+    if (voted) { const max = Math.max(...counts); decision = [2, 1, 0].find(i => counts[i] === max); } // при равенстве — осторожнее
+    return { team: t, members: ids.length, voted, counts, decision, points: app && decision !== null ? app.points[decision] : 0 };
+  });
+}
+function dealSettle() {
+  // Закрываем голосование: начисляем баллы командам один раз.
+  if (deal.phase !== 'vote') return;
+  const res = dealTally();
+  for (const r of res) deal.scores[r.team] = (deal.scores[r.team] || 0) + r.points;
+  deal.log[deal.idx] = res.map(r => ({ team: r.team, decision: r.decision, points: r.points }));
+  deal.phase = 'reveal';
+}
+const dealTable = () => dealTeams().map(t => ({ team: t, score: (deal.scores[t] || 0) + (deal.bonus[t] || 0), members: Object.values(deal.players).filter(p => p.team === t).length }))
+  .sort((a, b) => b.score - a.score);
+route('GET', /^\/api\/deal$/, ctx => {
+  let did = ctx.cookies.did;
+  if (!did) { did = rand(10); setCookie(ctx.res, 'did', did, 60 * 60 * 12); }
+  if (deal.phase === 'vote' && now() > deal.endsAt + 1500) { dealSettle(); dealDirty = true; }
+  const me = deal.players[did] || null, app = DEAL.apps[deal.idx] || null;
+  const out = { phase: deal.phase, idx: deal.idx, total: DEAL.apps.length, now: now(), endsAt: deal.endsAt, title: DEAL.title, choices: DEAL.choices,
+    teams: dealTeams().length, players: Object.keys(deal.players).length, me: me && { team: me.team }, my: deal.votes[did] ?? null };
+  if (app && deal.phase !== 'idle' && deal.phase !== 'final') Object.assign(out, { app: { title: app.title, ask: app.ask, data: app.data, signals: app.signals } });
+  if (deal.phase === 'vote') out.tally = dealTally().map(r => ({ team: r.team, members: r.members, voted: r.voted }));
+  if (deal.phase === 'reveal') Object.assign(out, { tally: dealTally(), right: app.right, after: app.after, points: app.points, table: dealTable(), bonus: deal.bonus });
+  if (deal.phase === 'final' || deal.phase === 'idle') out.table = dealTable();
+  return out;
+});
+route('POST', /^\/api\/deal\/join$/, async ctx => {
+  rateLimit('djoin:' + ctx.ip, 600, 60000);
+  const { team } = await ctx.body();
+  if (!ctx.cookies.did) fail(400, 'Обнови страницу');
+  if (!dealTeams().includes(Number(team))) fail(400, 'Нет такой команды');
+  deal.players[ctx.cookies.did] = { team: Number(team) };
+  dealDirty = true;
+  return { ok: true };
+});
+route('POST', /^\/api\/deal\/vote$/, async ctx => {
+  const { choice } = await ctx.body();
+  const did = ctx.cookies.did;
+  if (!did || !deal.players[did]) fail(400, 'Сначала выбери команду');
+  if (deal.phase !== 'vote' || now() > deal.endsAt) fail(409, 'Голосование закрыто');
+  if (![0, 1, 2].includes(choice)) fail(400, 'Нет такого варианта');
+  deal.votes[did] = choice; // передумать можно, пока идёт голосование
+  dealDirty = true;
+  return { ok: true, choice };
+});
+route('POST', /^\/api\/deal\/control$/, async ctx => {
+  requireAdmin(ctx);
+  const { action, team } = await ctx.body();
+  if (action === 'reset') deal = dealFresh();
+  else if (action === 'bonus') { const t = Number(team); if (dealTeams().includes(t) && deal.phase === 'reveal') { const k = deal.idx + ':' + t; deal.bonusDone = deal.bonusDone || {}; if (deal.bonusDone[k]) { delete deal.bonusDone[k]; deal.bonus[t] = (deal.bonus[t] || 0) - 1; } else { deal.bonusDone[k] = 1; deal.bonus[t] = (deal.bonus[t] || 0) + 1; } } }
+  else if (action === 'next') {
+    if (deal.phase === 'vote') dealSettle();
+    else if (deal.phase === 'intro') { deal.phase = 'vote'; deal.votes = {}; deal.endsAt = now() + DEAL_MS; }
+    else if (deal.phase === 'final') { /* конец */ }
+    else if (deal.idx + 1 >= DEAL.apps.length) deal.phase = 'final';
+    else { deal.idx++; deal.phase = 'intro'; deal.votes = {}; }
+  } else fail(400, 'Неизвестная команда');
+  dealDirty = true;
+  return { phase: deal.phase, idx: deal.idx };
+});
+
 // --- Админка ---
 route('POST', /^\/api\/admin\/login$/, async ctx => {
   rateLimit('adm:' + ctx.ip, 8, 60000);
@@ -1009,7 +1089,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html', '/stage/vault': 'stage-vault.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html', '/stage/vault': 'stage-vault.html', '/deal': 'deal.html', '/stage/deal': 'stage-deal.html' };
 const pageFor = p => PAGES[p] || (/^\/bonus\/\d+-[a-f0-9]{12}$/.test(p) ? 'bonus.html' : /^\/v\/[^/]{1,60}$/.test(p) ? 'hidden.html' : null);
 
 function serveFile(res, root, rel) {
