@@ -78,7 +78,7 @@ async function load() {
   const d = await r.json(), t = d.totals;
   const when = new Date(d.now).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
   const maxDay = Math.max(1, ...d.days.map(x => Math.max(x.visitors, x.players)));
-  const kpi = (v, l) => `<div class="kpi"><b>${fmt(v)}</b><span>${l}</span></div>`;
+  const kpi = (v, l) => `<div class="kpi"><b>${typeof v === 'number' ? fmt(v) : esc(v)}</b><span>${l}</span></div>`;
   $('#view').innerHTML = `
     <h1 style="margin-bottom:4px">Неделя финансовой грамотности СПбГАУ</h1>
     <p class="muted" style="margin-top:0">Игра «Хранилище» при поддержке банка ВТБ · данные на ${esc(when)} (МСК) · ${esc(d.base_url)}</p>
@@ -95,6 +95,9 @@ async function load() {
       ${kpi(t.vk_bot, 'подписаны на бота ВКонтакте')}
       ${kpi(t.referrals, 'пришли по приглашению друга')}
       ${kpi(t.trap, 'попались на учебный «фишинговый» QR')}
+      ${d.phish && d.phish.sent ? kpi(Math.round((d.phish.sent - d.phish.clicked) / d.phish.sent * 100) + '%', `не перешли по фишинговой ссылке в учениях (${d.phish.clicked} из ${d.phish.sent} перешли)`) : ''}
+      ${d.phish && d.phish.sent ? kpi(d.phish.reported, 'распознали фишинг и сообщили о нём') : ''}
+      ${kpi(t.deposits, 'держат баллы на вкладе')}
       ${kpi(t.quiz, 'участников квиза')}
       ${kpi(t.views, 'просмотров страниц')}
     </div>

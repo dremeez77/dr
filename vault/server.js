@@ -163,6 +163,9 @@ function openPuzzle(num) {
   if (!p || p.opens_at > now()) fail(404, 'Этот замок ещё закрыт');
   return p;
 }
+// Молниеносный замок живёт decay_minutes минут после открытия, потом ответы не принимаются.
+const flashEnd = p => p.opens_at + p.decay_minutes * 60000;
+const flashClosed = p => p.kind === 'flash' && now() >= flashEnd(p);
 const hintsUsed = (uid, pid) => q('SELECT COUNT(*) c FROM hint_uses WHERE user_id=? AND puzzle_id=?').get(uid, pid).c;
 const wrongCount = (uid, pid) => q('SELECT COUNT(*) c FROM attempts WHERE user_id=? AND puzzle_id=? AND correct=0').get(uid, pid).c;
 const contestOver = () => { const e = endsAt(); return e > 0 && now() >= e; };
@@ -176,6 +179,18 @@ function creditReferral(u) {
   const done = q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.ref_by).c;
   if (done <= REF_MAX) q('UPDATE users SET bonus=bonus+? WHERE id=? AND banned=0').run(REF_BONUS, u.ref_by);
 }
+
+// ---------- Вклад ----------
+// Игрок кладёт баллы на вклад: 5% за каждые полные сутки, простые проценты. Пока вклад открыт, подсказки недоступны.
+const DEP_RATE = 0.05, DEP_MIN = 10, DAY = 86400000;
+function interestOf(u, t = now()) {
+  if (!u || !u.deposit || !u.dep_at) return 0;
+  const end = endsAt() > 0 ? Math.min(t, endsAt()) : t;
+  return Math.floor(u.deposit * DEP_RATE * Math.max(0, Math.floor((end - u.dep_at) / DAY)));
+}
+const baseTotal = u => q('SELECT COALESCE(SUM(points),0) t FROM solves WHERE user_id=?').get(u.id).t + (u.bonus || 0);
+// Сортировка таблицы с учётом процентов по вкладу: проценты считаются на лету, поэтому их нельзя добавить в SQL.
+const withInterest = rows => rows.map(r => ({ ...r, total: r.total + interestOf(r) })).sort((a, b) => b.total - a.total || a.last - b.last);
 
 // ---------- Значки ----------
 // Считаются на лету из решений, поэтому их не нужно хранить и пересчитывать.
@@ -195,6 +210,7 @@ function badgesMap() {
   }
   for (const [id, l] of locks) { if (l.clean >= 2) add(id, 'clean'); if (lockTotal >= 2 && l.n >= lockTotal) add(id, 'all'); }
   for (const [id, n] of warms) if (n >= 3) add(id, 'warm');
+  for (const r of q('SELECT id FROM users WHERE phish_reported IS NOT NULL AND phish_clicked IS NULL').all()) add(r.id, 'vigilant');
   for (const r of q('SELECT ref_by id, COUNT(*) c FROM users WHERE ref_done=1 AND ref_by IS NOT NULL GROUP BY ref_by').all()) if (r.c >= 3) add(r.id, 'friends');
   return m;
 }
@@ -235,27 +251,29 @@ route('GET', /^\/api\/state$/, ctx => {
   const t = now(), u = ctx.user;
   // Черновые замки тоже показываем — как закрытые, с таймером, но без названия. Открыться они не могут,
   // пока организатор не опубликует их (так замок №1 виден до шоу, хотя шифр в него вписывают после).
-  const puzzles = q("SELECT * FROM puzzles WHERE (published=1 OR kind='lock') AND kind<>'secret' ORDER BY num").all().map(p => {
+  const puzzles = q("SELECT * FROM puzzles WHERE (published=1 OR kind='lock') AND kind<>'secret' ORDER BY num").all()
+    .filter(p => p.kind !== 'flash' || (p.opens_at <= t && (t < flashEnd(p) || (u && q('SELECT 1 FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id))))).map(p => {
     const open = p.published === 1 && p.opens_at <= t;
     const mine = u ? q('SELECT points, place FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) : null;
     return {
-      num: p.num, kind: p.kind, opens_at: p.opens_at, open, draft: p.published !== 1,
+      num: p.num, kind: p.kind, opens_at: p.opens_at, open, draft: p.published !== 1, closes_at: p.kind === 'flash' ? flashEnd(p) : 0,
       title: open ? p.title : null,
       max_points: p.max_points, min_points: p.min_points, decay_minutes: p.decay_minutes,
       solvers: open ? q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0').get(p.id).c : 0,
       solved: mine || null,
     };
   });
-  const total = u ? q('SELECT COALESCE(SUM(points),0) t FROM solves WHERE user_id=?').get(u.id).t + (u.bonus || 0) : 0;
+  const total = u ? baseTotal(u) + interestOf(u) : 0;
+  const deposit = u && u.nick ? { amount: u.deposit, since: u.dep_at, interest: interestOf(u), rate: DEP_RATE, min: DEP_MIN, free: baseTotal(u), next_at: u.deposit ? u.dep_at + (Math.floor((now() - u.dep_at) / DAY) + 1) * DAY : 0 } : null;
   const invite = u && u.nick ? { url: `${cfg.baseUrl}/?r=${u.id}`, friends: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.id).c, pending: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=0').get(u.id).c, per: REF_BONUS, max: REF_MAX } : null;
-  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
+  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, deposit, badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
     login: { tg: !!(cfg.tgToken && cfg.tgUser), vk: !!(cfg.vkToken && cfg.vkScreen), dev: cfg.devLogin } };
 });
 
 route('GET', /^\/api\/leaderboard$/, () => {
-  const all = q(`SELECT u.id, u.nick, u.group_name, u.is_staff, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last
+  const all = withInterest(q(`SELECT u.id, u.nick, u.group_name, u.is_staff, u.deposit, u.dep_at, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last
                   FROM users u LEFT JOIN solves s ON s.user_id=u.id WHERE u.banned=0 AND u.nick IS NOT NULL
-                  GROUP BY u.id HAVING total > 0 ORDER BY total DESC, last ASC`).all();
+                  GROUP BY u.id HAVING total > 0 ORDER BY total DESC, last ASC`).all());
   const rows = all.filter(r => !r.is_staff), staffRows = all.filter(r => r.is_staff);
   const per = {}, warm = {}, secret = {}, bm = badgesMap();
   for (const r of q('SELECT s.user_id, p.num, p.kind, s.points, s.place FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
@@ -348,7 +366,7 @@ route('GET', /^\/api\/puzzle\/(\d+)$/, ctx => {
   const hints = parse(p.hints, []), used = hintsUsed(u.id, p.id);
   const last = q('SELECT MAX(created_at) t FROM attempts WHERE user_id=? AND puzzle_id=?').get(u.id, p.id).t || 0;
   return {
-    num: p.num, kind: p.kind, title: p.title, body: p.body, opens_at: p.opens_at,
+    num: p.num, kind: p.kind, title: p.title, body: p.body, opens_at: p.opens_at, closes_at: p.kind === 'flash' ? flashEnd(p) : 0,
     max_points: p.max_points, min_points: p.min_points, decay_minutes: p.decay_minutes,
     solved: q('SELECT points, place, solved_at FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) || null,
     wrong: wrongCount(u.id, p.id),
@@ -362,6 +380,7 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
   const u = requirePlayer(ctx), p = openPuzzle(ctx.params[0]);
   const { answer } = await ctx.body();
   if (contestOver()) fail(403, 'Игра завершена, ответы больше не принимаются');
+  if (flashClosed(p)) fail(403, 'Молниеносный замок уже закрылся');
   if (q('SELECT 1 FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id)) fail(409, 'Этот замок ты уже открыл');
   const raw = String(answer || '').trim().slice(0, 200), norm = normalize(raw);
   if (!norm) fail(400, 'Пустой ответ');
@@ -400,12 +419,80 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
 
 route('POST', /^\/api\/puzzle\/(\d+)\/hint$/, ctx => {
   const u = requirePlayer(ctx), p = openPuzzle(ctx.params[0]);
+  if (ctx.user.deposit > 0) fail(403, 'Пока открыт вклад, подсказки недоступны. Закрой вклад, если подсказка нужнее.');
   if (contestOver()) fail(403, 'Игра завершена');
   if (q('SELECT 1 FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id)) fail(409, 'Замок уже открыт');
   const hints = parse(p.hints, []), used = hintsUsed(u.id, p.id);
   if (used >= hints.length) fail(404, 'Подсказок больше нет');
   q('INSERT INTO hint_uses(user_id,puzzle_id,idx,created_at) VALUES(?,?,?,?)').run(u.id, p.id, used, now());
   return { idx: used, text: hints[used].text, cost: hints[used].cost };
+});
+
+// --- Вклад ---
+route('POST', /^\/api\/deposit$/, async ctx => {
+  const u = requirePlayer(ctx);
+  if (contestOver()) fail(403, 'Игра завершена: вклады заморожены, проценты уже в итоге');
+  const { action, amount } = await ctx.body();
+  if (action === 'open') {
+    if (u.deposit > 0) fail(409, 'Вклад уже открыт');
+    const a = Math.floor(Number(amount)), free = baseTotal(u);
+    if (!(a >= DEP_MIN)) fail(400, `Минимальная сумма вклада — ${DEP_MIN} баллов`);
+    if (a > free) fail(400, `У тебя только ${free} баллов`);
+    q('UPDATE users SET deposit=?, dep_at=? WHERE id=?').run(a, now(), u.id);
+    return { ok: true };
+  }
+  if (action === 'close') {
+    if (!u.deposit) fail(409, 'Вклада нет');
+    const gain = interestOf(u);
+    q('UPDATE users SET deposit=0, dep_at=NULL, bonus=bonus+? WHERE id=?').run(gain, u.id);
+    return { ok: true, interest: gain };
+  }
+  fail(400, 'Неизвестное действие');
+});
+
+// --- Учебный фишинг ---
+// Организатор запускает учения: бот присылает каждому «щедрое предложение» с личной ссылкой.
+// Кто перешёл — видит разбор, как его обманули. Кто написал боту «фишинг» и не переходил — получает значок «Бдительный» и 5 баллов.
+// Никакие данные на странице не вводятся и не собираются.
+const PHISH_WINDOW = 48 * 3600000;
+const phishSig = id => crypto.createHmac('sha256', kvGet('secret')).update('phish:' + id).digest('hex').slice(0, 12);
+const phishActive = () => { const t = Number(kvGet('phish_at') || 0); return t > 0 && now() - t < PHISH_WINDOW; };
+function phishStats() {
+  const at = Number(kvGet('phish_at') || 0);
+  return { at, sent: Number(kvGet('phish_sent') || 0), clicked: q('SELECT COUNT(*) c FROM users WHERE phish_clicked IS NOT NULL').get().c,
+    reported: q('SELECT COUNT(*) c FROM users WHERE phish_reported IS NOT NULL AND phish_clicked IS NULL').get().c };
+}
+bots.onText = (provider, id, text) => {
+  if (!/фишинг|мошен|развод|скам|scam|phish|обман|подозрит/i.test(text) || !Number(kvGet('phish_at') || 0)) return null;
+  const u = q('SELECT * FROM users WHERE provider=? AND provider_id=?').get(provider, id);
+  if (!u || !u.nick) return 'Сначала войди в игру на сайте. Но за бдительность хвалю.';
+  if (u.phish_clicked) return 'Поздно: по ссылке ты уже перешёл. Разбор ошибок — на той странице. В следующий раз будь внимательнее.';
+  if (u.phish_reported) return 'Ты уже сообщил. Значок «Бдительный» твой.';
+  if (!phishActive()) return 'Учения уже закончились, но привычка правильная.';
+  q('UPDATE users SET phish_reported=?, bonus=bonus+5 WHERE id=?').run(now(), u.id);
+  return '🛡 Верно, это была учебная фишинговая рассылка. Ты не перешёл по ссылке и сообщил о ней — так и нужно делать с подозрительными сообщениями, даже от знакомых. +5 баллов и значок «Бдительный».';
+};
+route('POST', /^\/api\/admin\/phish$/, async ctx => {
+  requireAdmin(ctx);
+  const { text } = await ctx.body();
+  if (phishActive()) fail(409, 'Учения уже идут');
+  const users = q("SELECT id, provider, provider_id FROM users WHERE banned=0 AND nick IS NOT NULL AND provider IN ('tg','vk')").all();
+  kvSet('phish_at', now()); kvSet('phish_sent', users.length);
+  const tpl = String(text || '').trim() || '🎁 Хранитель расщедрился: первые 30 игроков получают +50 баллов! Подтверди участие до 23:59 по ссылке: {link}';
+  (async () => {
+    for (const u of users) {
+      const link = `${cfg.baseUrl}/bonus/${u.id}-${phishSig(u.id)}`;
+      try { await bots.send(u, tpl.includes('{link}') ? tpl.replace('{link}', link) : tpl + '\n' + link); } catch { /* недоставленные пропускаем */ }
+      await new Promise(r => setTimeout(r, 60));
+    }
+  })();
+  return { ok: true, sent: users.length };
+});
+route('POST', /^\/api\/bonus\/(\d+)-([a-f0-9]{12})$/, ctx => {
+  const id = Number(ctx.params[0]);
+  if (ctx.params[1] !== phishSig(id)) return { ok: false };
+  q('UPDATE users SET phish_clicked=COALESCE(phish_clicked, ?) WHERE id=?').run(now(), id);
+  return { ok: true };
 });
 
 // --- Сцена: QR-ловушка «бесплатный кофе» ---
@@ -588,9 +675,10 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
       solvers: q('SELECT COUNT(*) c FROM solves WHERE puzzle_id=?').get(p.id).c,
       tries: q('SELECT COUNT(*) c FROM attempts WHERE puzzle_id=?').get(p.id).c,
     })),
-    users: q(`SELECT u.id, u.provider, u.provider_id, u.display_name, u.nick, u.group_name, u.banned, u.created_at,
-              u.is_staff, u.src, u.ref_by, COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) + u.bonus total
-              FROM users u ORDER BY total DESC, u.id`).all(),
+    users: withInterest(q(`SELECT u.id, u.provider, u.provider_id, u.display_name, u.nick, u.group_name, u.banned, u.created_at,
+              u.is_staff, u.src, u.ref_by, u.deposit, u.dep_at, 0 last, COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) + u.bonus total
+              FROM users u ORDER BY total DESC, u.id`).all()),
+    phish: phishStats(),
   };
 });
 
@@ -604,8 +692,8 @@ route('POST', /^\/api\/admin\/puzzle$/, async ctx => {
   const answers = (b.answers || []).map(a => String(a).trim()).filter(Boolean);
   if (b.published && !answers.length) fail(400, 'Нельзя публиковать замок без ответа');
   const hints = (b.hints || []).filter(h => h && String(h.text || '').trim()).map(h => ({ text: String(h.text).trim(), cost: Math.max(0, Number(h.cost) || 0) }));
-  const kind = ['warmup', 'secret'].includes(b.kind) ? b.kind : 'lock';
-  const max = Math.max(1, Number(b.max_points) || 100), min = kind !== 'lock' ? max : Math.min(max, Math.max(0, Number(b.min_points) || 0));
+  const kind = ['warmup', 'secret', 'flash'].includes(b.kind) ? b.kind : 'lock';
+  const max = Math.max(1, Number(b.max_points) || 100), min = kind !== 'lock' && kind !== 'flash' ? max : Math.min(max, Math.max(0, Number(b.min_points) || 0));
   const vals = [String(b.title).trim(), String(b.body || ''), opens, max, min, Math.max(1, Number(b.decay_minutes) || 720),
     JSON.stringify(answers), JSON.stringify(hints), b.published ? 1 : 0];
   const old = q('SELECT * FROM puzzles WHERE num=?').get(num);
@@ -709,8 +797,8 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
 // Суперфинал: вопрос и код от кейса видит только экран на сцене (вход администратора).
 route('GET', /^\/api\/admin\/final$/, ctx => {
   requireAdmin(ctx);
-  const top = q(`SELECT u.nick, u.group_name, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last FROM users u LEFT JOIN solves s ON s.user_id=u.id
-                 WHERE u.banned=0 AND u.is_staff=0 AND u.nick IS NOT NULL GROUP BY u.id HAVING total > 0 ORDER BY total DESC, last ASC LIMIT 3`).all();
+  const top = withInterest(q(`SELECT u.nick, u.group_name, u.deposit, u.dep_at, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last FROM users u LEFT JOIN solves s ON s.user_id=u.id
+                 WHERE u.banned=0 AND u.is_staff=0 AND u.nick IS NOT NULL GROUP BY u.id HAVING total > 0`).all()).slice(0, 3).map(({ nick, group_name, total }) => ({ nick, group_name, total }));
   return { top, question: kvGet('final_question') || '', answer: kvGet('final_answer') || '' };
 });
 
@@ -787,13 +875,14 @@ route('GET', /^\/api\/admin\/report$/, ctx => {
       referrals: one('SELECT COUNT(*) c FROM users WHERE ref_done=1'),
       trap: Number(kvGet('trap_count') || 0),
       quiz: Object.keys(quiz.players).length,
+      deposits: one('SELECT COUNT(*) c FROM users WHERE deposit>0'), deposit_sum: one('SELECT COALESCE(SUM(deposit),0) c FROM users'),
       vk_bot: one(`SELECT COUNT(*) c FROM users WHERE ${players} AND provider='vk'`),
     },
     days: Object.values(days).sort((a, b) => a.day < b.day ? -1 : 1),
     sources_visitors: q('SELECT COALESCE(src,\'direct\') src, COUNT(DISTINCT vid) c FROM visits GROUP BY src ORDER BY c DESC').all(),
     sources_players: q(`SELECT COALESCE(src,'direct') src, COUNT(*) c FROM users WHERE ${players} GROUP BY src ORDER BY c DESC`).all(),
     puzzles: q("SELECT p.num, p.kind, p.title, p.opens_at, (SELECT COUNT(*) FROM solves WHERE puzzle_id=p.id) solvers, (SELECT COUNT(*) FROM attempts WHERE puzzle_id=p.id) tries, (SELECT COUNT(DISTINCT user_id) FROM attempts WHERE puzzle_id=p.id) triers FROM puzzles p WHERE p.published=1 AND p.kind<>'secret' ORDER BY p.opens_at").all(),
-    feedback: feedbackStats(),
+    feedback: feedbackStats(), phish: phishStats(),
     pages: q('SELECT path, SUM(n) c FROM pageviews GROUP BY path ORDER BY c DESC LIMIT 10').all(),
   };
 });
@@ -813,6 +902,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
   '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html' };
+const pageFor = p => PAGES[p] || (/^\/bonus\/\d+-[a-f0-9]{12}$/.test(p) ? 'bonus.html' : null);
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));
@@ -847,8 +937,8 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith('/uploads/')) {
       if (serveFile(res, UPLOAD_DIR, pathname.slice('/uploads/'.length))) return;
     } else {
-      if (PAGES[pathname] && req.method === 'GET' && !pathname.startsWith('/stage') && pathname !== '/admin' && pathname !== '/report') trackVisit(req, res, url, pathname);
-      if (serveFile(res, PUBLIC_DIR, PAGES[pathname] || pathname.slice(1))) return;
+      if (pageFor(pathname) && req.method === 'GET' && !pathname.startsWith('/stage') && pathname !== '/admin' && pathname !== '/report') trackVisit(req, res, url, pathname);
+      if (serveFile(res, PUBLIC_DIR, pageFor(pathname) || pathname.slice(1))) return;
     }
     // Страница «не найдено» от Хранителя
     const nf = path.join(PUBLIC_DIR, '404.html');
@@ -869,7 +959,9 @@ function notifyTick() {
   for (const p of q('SELECT * FROM puzzles WHERE published=1 AND notified_open=0 AND opens_at<=?').all(t)) {
     q('UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE id=?').run(p.id);
     // Если сервер был выключен и замок открылся давно, запоздалое сообщение не шлём.
-    if (t - p.opens_at < 30 * 60000) bots.broadcast(users(), p.kind === 'warmup'
+    if (t - p.opens_at < 30 * 60000) bots.broadcast(users(), p.kind === 'flash'
+      ? `⚡ Молниеносный замок! Он исчезнет через ${p.decay_minutes} мин. Успеешь?\n${cfg.baseUrl}/#/lock/${p.num}`
+      : p.kind === 'warmup'
       ? `☕ Разминка дня открыта: ${p.max_points} баллов каждому, кто ответит верно. Спешить не нужно.\n${cfg.baseUrl}/#/lock/${p.num}`
       : `🔓 Замок №${p.num} открыт! Чем быстрее решишь, тем больше баллов.\n${cfg.baseUrl}/#/lock/${p.num}`);
   }

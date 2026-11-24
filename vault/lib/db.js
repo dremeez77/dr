@@ -80,7 +80,7 @@ function openDb(dataDir) {
   // Преподаватели и сотрудники играют в отдельном зачёте и не претендуют на приз студентов.
   try { db.exec('ALTER TABLE users ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0'); } catch { /* колонка уже есть */ }
   // Статистика для отчёта партнёру: источник прихода и приглашения друзей.
-  for (const col of ['src TEXT', 'ref_by INTEGER', 'ref_done INTEGER NOT NULL DEFAULT 0', 'bonus INTEGER NOT NULL DEFAULT 0'])
+  for (const col of ['src TEXT', 'ref_by INTEGER', 'ref_done INTEGER NOT NULL DEFAULT 0', 'bonus INTEGER NOT NULL DEFAULT 0', 'deposit INTEGER NOT NULL DEFAULT 0', 'dep_at INTEGER', 'phish_clicked INTEGER', 'phish_reported INTEGER'])
     try { db.exec('ALTER TABLE users ADD COLUMN ' + col); } catch { /* колонка уже есть */ }
   db.exec(`
     CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, vid TEXT NOT NULL, src TEXT, first INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));

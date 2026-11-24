@@ -22,6 +22,9 @@ class Bots {
   }
 
   replyFor(text, provider, id, name) {
+    // Сначала игра может сама ответить на сообщение (например, на «фишинг» во время учений).
+    const custom = this.onText && this.onText(provider, id, String(text || ''));
+    if (custom) return custom;
     const code = String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (CODE_RE.test(code)) {
       return this.bind(code, provider, id, name)

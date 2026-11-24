@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>🎁 Бонус +50 баллов</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .wrap { max-width: 620px; }
+  .bait { text-align: center; padding: 40px 20px; border: 2px dashed #ffd23f; border-radius: 22px; background: linear-gradient(160deg, #2a1d00, #0a1543); margin-top: 30px; }
+  .bait .big { font: 900 76px/1 var(--sans); color: #ffd23f; margin: 10px 0; }
+  .bait .timer { font: 700 22px var(--mono); color: var(--red); }
+  .bait button { background: #ffd23f; font-size: 18px; padding: 16px 26px; margin-top: 18px; }
+  .reveal h1 { font-size: 34px; line-height: 1.15; }
+  .sign { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--red); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .sign b { display: block; margin-bottom: 4px; }
+  .sign span { color: var(--muted); font-size: 15px; }
+  .rule-ok { border-left-color: var(--green); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main id="view">
+    <div class="bait">
+      <div style="font-size:54px">🎁</div>
+      <div style="font-weight:700;font-size:20px">Поздравляем! Ты в числе первых 30</div>
+      <div class="big">+50 баллов</div>
+      <div class="muted">Осталось мест: <b style="color:#ffd23f">3</b></div>
+      <div class="timer" id="t">Предложение сгорит через 04:59</div>
+      <button id="get">Забрать бонус</button>
+      <p class="muted" style="font-size:12px;margin-top:14px">Подтверди участие, чтобы баллы зачислились</p>
+    </div>
+  </main>
+</div>
+<script>
+const m = location.pathname.match(/\/bonus\/(\d+-[a-f0-9]{12})$/);
+// Переход по ссылке уже считается ошибкой: фиксируем его сразу, ещё до нажатия кнопки.
+if (m) fetch('/api/bonus/' + m[1], { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
+let left = 299;
+const tm = setInterval(() => { left = Math.max(0, left - 1); document.getElementById('t').textContent = `Предложение сгорит через 0${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; }, 1000);
+function reveal() {
+  clearInterval(tm);
+  document.title = 'Это были учения';
+  document.getElementById('view').innerHTML = `<div class="reveal">
+    <p class="mono muted" style="letter-spacing:.18em;font-size:12px;margin-top:30px">🗝 ХРАНИТЕЛЬ</p>
+    <h1>Это была учебная фишинговая рассылка</h1>
+    <p>Ты перешёл по ссылке из сообщения, которое обещало бесплатные баллы. Ничего страшного не случилось: это учения недели финансовой грамотности, никакие данные не собраны и баллы не списаны. Но настоящий мошенник на этом месте попросил бы логин, пароль, код из СМС или данные карты.</p>
+    <h2>По каким признакам можно было догадаться</h2>
+    <div class="sign"><b>Халява</b><span>«+50 баллов просто так». Бесплатные деньги, призы и выигрыши, о которых вы не просили, — главная приманка мошенников.</span></div>
+    <div class="sign"><b>Спешка</b><span>«Первые 30», «до 23:59», «осталось 3 места», таймер. Срочность нужна, чтобы вы не успели подумать.</span></div>
+    <div class="sign"><b>Ссылка вместо привычного пути</b><span>Хранитель всегда начисляет баллы на сайте автоматически. Если что-то «нужно подтвердить по ссылке», это повод насторожиться.</span></div>
+    <div class="sign"><b>Знакомый отправитель — не гарантия</b><span>Сообщение пришло от знакомого бота. Взломанные аккаунты друзей, групп и даже «службы поддержки» — обычный способ рассылки.</span></div>
+    <h2>Что делать в жизни</h2>
+    <div class="sign rule-ok"><b>Не переходите по ссылкам из неожиданных сообщений</b><span>Откройте сайт или приложение банка сами, вручную, и проверьте там.</span></div>
+    <div class="sign rule-ok"><b>Никому не сообщайте коды из СМС и пароли</b><span>Сотрудники банка их никогда не спрашивают. Если просят — это мошенник.</span></div>
+    <div class="sign rule-ok"><b>Сомневаетесь — позвоните в банк сами</b><span>По номеру с обратной стороны карты или с официального сайта, а не по номеру из сообщения.</span></div>
+    <p style="margin-top:24px">Значок «Бдительный» в этот раз достанется тем, кто не перешёл по ссылке и написал боту «фишинг». В следующий раз — может, тебе.</p>
+    <p><a href="/" style="display:inline-block;padding:12px 18px;background:var(--gold);color:#111;border-radius:10px;text-decoration:none;font-weight:600">Вернуться в игру</a></p></div>`;
+}
+document.getElementById('get').onclick = reveal;
+setTimeout(reveal, 6000);
+</script>
+</body>
+</html>

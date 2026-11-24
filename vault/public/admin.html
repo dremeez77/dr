@@ -68,7 +68,7 @@ function paneP() {
   if (editing) return editP(editing);
   $('#pane').innerHTML = `
     <div class="tbl-scroll"><table class="tbl"><thead><tr><th>№</th><th>Название</th><th>Открытие</th><th>Баллы</th><th>Статус</th><th class="r">Решили</th><th class="r">Попыток</th><th></th></tr></thead><tbody>
-    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : p.kind === 'secret' ? ' <span class="muted">· пасхалка, на сайте не видна</span>' : ''}</td><td>${when(p.opens_at)}</td>
+    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : p.kind === 'secret' ? ' <span class="muted">· пасхалка, на сайте не видна</span>' : p.kind === 'flash' ? ` <span class="muted">· ⚡ молниеносный, живёт ${p.decay_minutes} мин</span>` : ''}</td><td>${when(p.opens_at)}</td>
       <td class="mono">${p.max_points}→${p.min_points} за ${p.decay_minutes} мин</td>
       <td>${!p.published ? '<span class="muted">черновик</span>' : p.opens_at <= D.now ? '<span class="green">открыт</span>' : '<span class="gold">ждёт</span>'}</td>
       <td class="r">${p.solvers}</td><td class="r">${p.tries}</td><td><button class="ghost small" data-edit="${p.num}">Изменить</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Замков пока нет</td></tr>'}
@@ -90,7 +90,7 @@ function editP(p) {
   $('#pane').innerHTML = `<div class="card">
     <div class="grid">
       <div><label>Номер</label><input id="num" type="number" min="1" value="${p.num}" ${p.isNew ? '' : 'disabled'}></div>
-      <div><label>Тип</label><select id="kind"><option value="lock">Замок</option><option value="warmup" ${p.kind === 'warmup' ? 'selected' : ''}>Разминка</option><option value="secret" ${p.kind === 'secret' ? 'selected' : ''}>Секрет (пасхалка)</option></select></div>
+      <div><label>Тип</label><select id="kind"><option value="lock">Замок</option><option value="warmup" ${p.kind === 'warmup' ? 'selected' : ''}>Разминка</option><option value="secret" ${p.kind === 'secret' ? 'selected' : ''}>Секрет (пасхалка)</option><option value="flash" ${p.kind === 'flash' ? 'selected' : ''}>⚡ Молниеносный</option></select></div>
       <div style="grid-column: span 2"><label>Название (видно после открытия)</label><input id="title" value="${esc(p.title)}"></div>
       <div><label>Открывается</label><input id="opens" type="datetime-local" value="${toLocal(p.opens_at)}"></div>
     </div>
@@ -246,6 +246,14 @@ function paneSet() {
   if (D.auction_price) $('#gk').value = D.auction_price; // цена, которую техник ввёл на слайде аукциона
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
+  const ph = D.phish || {};
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card"><b>Учебный фишинг</b>
+    <p class="note">Бот пришлёт каждому игроку «щедрое предложение» с личной ссылкой. Кто перейдёт — увидит разбор, как его обманули (данные не вводятся и не собираются). Кто напишет боту «фишинг» или «мошенники», не переходя по ссылке, получит +5 баллов и значок «Бдительный». Окно учений — 48 часов. Запускать один раз, лучше вечером в среду или четверг.</p>
+    ${ph.at ? `<p>Запущено: ${new Date(ph.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} · отправлено ${ph.sent} · <b class="red">перешли ${ph.clicked}</b> · <b class="green">распознали ${ph.reported}</b></p>` : ''}
+    <label>Текст (ссылка подставится вместо {link})</label><textarea id="phTxt" style="min-height:80px">🎁 Хранитель расщедрился: первые 30 игроков получают +50 баллов! Подтверди участие до 23:59 по ссылке: {link}</textarea>
+    <div class="bar"><button id="phGo" ${ph.at ? 'disabled' : ''}>${ph.at ? 'Учения уже проводились' : 'Запустить учения'}</button><span class="ok" id="phok"></span></div></div>`);
+  $('#phGo').onclick = async () => { if (!confirm('Отправить учебную фишинговую рассылку всем игрокам?')) return;
+    try { const r = await api('/api/admin/phish', { text: $('#phTxt').value }); $('#phok').textContent = ' Отправляется: ' + r.sent; } catch (e) { alert(e.message); } };
   $('#pane').insertAdjacentHTML('afterbegin', `<div class="card"><b>Анкета после недели</b>
     <p class="note">Анкета всегда доступна по ссылке <a href="/feedback" target="_blank">/feedback</a>. Галочка показывает на главной карточку «Оцени неделю». Включи в пятницу после финала и отправь ссылку через «Рассылку». Ответы появятся в <a href="/report" target="_blank">/report</a>.</p>
     <label class="chk"><input type="checkbox" id="fbOn" ${D.feedback_on ? 'checked' : ''}> Показывать анкету на главной</label><span class="ok" id="fbok"></span></div>`);

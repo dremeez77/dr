@@ -83,6 +83,7 @@ const BADGES = {
   all: ['🔓', 'Взломщик', 'Открыл все замки'],
   warm: ['☕', 'Разогретый', 'Решил три разминки'],
   friends: ['🤝', 'Душа компании', 'Привёл трёх друзей'],
+  vigilant: ['🛡', 'Бдительный', 'Не дал себя обмануть'],
   curious: ['🗝', 'Любопытный', 'Нашёл то, что не показывали'],
 };
 const badgeIcons = list => (list || []).filter(b => BADGES[b]).map(b => `<span title="${BADGES[b][1]}: ${BADGES[b][2]}">${BADGES[b][0]}</span>`).join('');
@@ -101,6 +102,33 @@ function meHtml() {
     return `<div class="badge ${on ? 'on' : ''}"><span class="bi">${secret ? '❔' : ic}</span><b>${secret ? 'Секретный' : name}</b><span>${secret ? 'Как получить — секрет' : how}</span></div>`;
   }).join('')}</div>
   <p style="margin-top:14px"><button id="cardBtn" class="ghost">📸 Карточка для сторис</button></p>`;
+}
+
+function flashHtml(list) {
+  if (!list.length) return '';
+  return `<h2>⚡ Молниеносный замок</h2><div class="locks">${list.map(p => p.solved
+    ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">МОЛНИЕНОСНЫЙ · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span><span class="big">+${p.solved.points}</span><span class="sub">решили: ${p.solvers}</span></a>`
+    : `<a class="lock open" href="#/lock/${p.num}" style="border-color:var(--red)"><span class="n">МОЛНИЕНОСНЫЙ · ИСЧЕЗНЕТ ЧЕРЕЗ</span><span class="t">${esc(p.title)}</span><span class="big" data-cds="${p.closes_at}">${fmtShort(p.closes_at - serverNow())}</span><span class="sub">сейчас стоит ${valueNow(p)} баллов · решили: ${p.solvers}</span></a>`).join('')}</div>`;
+}
+
+function depositHtml() {
+  const d = S && S.deposit; if (!d || over() && !d.amount) return '';
+  const pct = Math.round(d.rate * 100);
+  if (d.amount) {
+    const days = Math.floor((serverNow() - d.since) / 86400000);
+    return `<h2>Твой вклад</h2><div class="rules"><div class="rule" style="grid-column:1/-1;border-color:var(--green)">
+      <b>${d.amount} баллов под ${pct}% в сутки</b>
+      <span>Прошло полных суток: ${days}. Проценты уже: <b class="green">+${d.interest}</b>. ${over() ? 'Игра завершена — проценты в итоге.' : `Следующие +${Math.floor(d.amount * d.rate)} через <span data-cds="${d.next_at}">${fmtShort(d.next_at - serverNow())}</span>.`}</span>
+      <span class="muted" style="font-size:14px;margin-top:6px">Пока вклад открыт, платные подсказки недоступны. Проценты уже учтены в таблице лидеров.</span>
+      ${over() ? '' : '<p style="margin:12px 0 0"><button id="depClose" class="ghost">Закрыть вклад</button></p>'}</div></div>`;
+  }
+  const can = d.free >= d.min;
+  return `<h2>Вклад</h2><div class="rules"><div class="rule" style="grid-column:1/-1">
+    <b>Баллы тоже могут работать: +${pct}% за каждые сутки</b>
+    <span>Положи часть баллов на вклад. За каждые полные сутки начисляется ${pct}% от суммы, до конца игры. Но пока вклад открыт, платные подсказки недоступны. Копить или тратить — решать тебе.</span>
+    ${can ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px"><input id="depAmt" type="number" min="${d.min}" max="${d.free}" value="${d.free}" style="width:130px">
+      <button id="depOpen">Открыть вклад</button><span class="muted" style="font-size:14px">доступно ${d.free} · минимум ${d.min}</span></div>`
+    : `<span class="muted" style="font-size:14px;margin-top:8px">Нужно хотя бы ${d.min} баллов. Реши разминку или замок.</span>`}</div></div>`;
 }
 
 function feedbackHtml() {
@@ -178,7 +206,7 @@ function inviteHtml() {
 
 function renderHome() {
   if (!S) return;
-  const ps = S.puzzles.filter(p => p.kind !== 'warmup'), warm = S.puzzles.filter(p => p.kind === 'warmup' && p.open);
+  const flash = S.puzzles.filter(p => p.kind === 'flash'), ps = S.puzzles.filter(p => p.kind !== 'warmup' && p.kind !== 'flash'), warm = S.puzzles.filter(p => p.kind === 'warmup' && p.open);
   const next = ps.find(p => !p.open && p.opens_at > serverNow());
   let nextHtml;
   if (over()) nextHtml = `<div class="next"><span class="lbl">Игра завершена</span><span class="cd">Итоги ниже</span></div>`;
@@ -208,7 +236,7 @@ function renderHome() {
       ${nextHtml}${cta}
       <p style="margin-top:18px;font-size:13px;letter-spacing:.08em">ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</p>
     </section>
-    ${feedbackHtml()}${meHtml()}${inviteHtml()}
+    ${feedbackHtml()}${flashHtml(flash)}${depositHtml()}${meHtml()}${inviteHtml()}
     <h2>Как это устроено</h2>
     <div class="steps">
       <div class="step"><span class="sn">01</span><b>Войди через ВКонтакте</b><span>Вступи в сообщество и пришли боту код. Это 30 секунд.</span></div>
@@ -235,6 +263,16 @@ function renderHome() {
       <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые прозвучали на открытии и на мероприятиях недели.</span></div>
     </div>`;
   const c = $('#cta'); if (c) c.onclick = openLogin;
+  const dOpen = $('#depOpen'); if (dOpen) dOpen.onclick = async () => {
+    const a = Number($('#depAmt').value);
+    if (!confirm(`Положить ${a} баллов на вклад? Пока вклад открыт, подсказки недоступны.`)) return;
+    try { await api('/api/deposit', { action: 'open', amount: a }); await refresh(); go(); } catch (e) { alert(e.message); }
+  };
+  const dClose = $('#depClose'); if (dClose) dClose.onclick = async () => {
+    const d = S.deposit;
+    if (!confirm(d.interest ? `Закрыть вклад? Проценты (+${d.interest}) станут обычными баллами, а подсказки снова откроются.` : 'Закрыть вклад? Полных суток ещё не прошло, проценты будут 0.')) return;
+    try { await api('/api/deposit', { action: 'close' }); await refresh(); go(); } catch (e) { alert(e.message); }
+  };
   const cb = $('#cardBtn'); if (cb) cb.onclick = () => makeCard().catch(e => alert('Не получилось: ' + e.message));
   const qb = $('#invQr'); if (qb) qb.onclick = () => showQr().catch(e => alert('Не получилось: ' + e.message));
   const ib = $('#invCopy'); if (ib) ib.onclick = async () => {
@@ -289,7 +327,7 @@ async function renderLock(num) {
   v.innerHTML = `
     <a class="back" href="#/">← Ко всем замкам</a>
     <div class="puzzle">
-      <span class="mono muted" style="font-size:12px;letter-spacing:.18em">${P.kind === 'warmup' ? 'РАЗМИНКА ДНЯ' : 'ЗАМОК №' + P.num}</span>
+      <span class="mono muted" style="font-size:12px;letter-spacing:.18em">${P.kind === 'warmup' ? 'РАЗМИНКА ДНЯ' : P.kind === 'flash' ? '⚡ МОЛНИЕНОСНЫЙ ЗАМОК' : 'ЗАМОК №' + P.num}</span>
       <h1>${esc(P.title)}</h1>
       <div class="meta" id="meta"></div>
       <div class="body" id="body"></div>
@@ -443,7 +481,7 @@ function tick() {
     const wait = Math.ceil((P.cooldown_until - serverNow()) / 1000);
     $('#meta').innerHTML = P.solved ? `<span class="pill green">Решено</span>` :
       P.kind === 'warmup' ? `<span class="pill gold">${P.max_points} баллов за верный ответ</span><span class="pill">Скорость не важна</span>` :
-      `<span class="pill gold">Сейчас стоит ${valueNow(P)} ${plural(valueNow(P), 'балл', 'балла', 'баллов')}</span><span class="pill">Ошибок: ${P.wrong}</span>`;
+      `<span class="pill gold">Сейчас стоит ${valueNow(P)} ${plural(valueNow(P), 'балл', 'балла', 'баллов')}</span><span class="pill">Ошибок: ${P.wrong}</span>${P.closes_at ? (P.closes_at > serverNow() ? `<span class="pill red">Исчезнет через ${fmtShort(P.closes_at - serverNow())}</span>` : '<span class="pill red">Замок закрылся</span>') : ''}`;
     const btn = $('#send');
     if (btn) { btn.disabled = wait > 0; btn.textContent = wait > 0 ? `Подожди ${wait} с` : 'Проверить'; }
   }
