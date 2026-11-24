@@ -41,7 +41,7 @@ function client(base) {
 
   const t = Date.now();
   const mk = (num, opens, extra = {}) => admin('/api/admin/puzzle', { num, title: 'Тайна ' + num, body: '<p>Секретный текст ' + num + '</p>', opens_at: opens,
-    max_points: 100, min_points: 30, decay_minutes: 60, answers: ['Тюльпан', '1637'], hints: [{ text: 'Голландия', cost: 15 }], published: true, ...extra });
+    max_points: 100, min_points: 30, decay_minutes: 60, answers: ['Сова', '2048'], hints: [{ text: 'Голландия', cost: 15 }], published: true, ...extra });
   assert.equal((await mk(1, t - 60000)).status, 200);
   assert.equal((await mk(2, t + 3600000)).status, 200);
   assert.equal((await mk(3, t - 60000, { published: false })).status, 200);
@@ -74,23 +74,23 @@ function client(base) {
   assert.ok(!JSON.stringify(p1).includes('Тюльпан'));
 
   // --- ответы ---
-  assert.equal((await a('/api/puzzle/2/answer', { answer: 'тюльпан' })).status, 404);
+  assert.equal((await a('/api/puzzle/2/answer', { answer: 'сова' })).status, 404);
   let r = await a('/api/puzzle/1/answer', { answer: 'роза' });
   assert.equal(r.body.correct, false);
-  r = await a('/api/puzzle/1/answer', { answer: 'тюльпан' });
+  r = await a('/api/puzzle/1/answer', { answer: 'сова' });
   assert.equal(r.status, 429, 'пауза между попытками');
   db.prepare('UPDATE attempts SET created_at = created_at - 30000').run(); // перематываем паузу
   r = await a('/api/puzzle/1/hint', {});
   assert.equal(r.body.text, 'Голландия');
   assert.equal((await a('/api/puzzle/1/hint', {})).status, 404, 'подсказки кончились');
-  r = await a('/api/puzzle/1/answer', { answer: '  ТЮЛЬПАН!!! ' });
+  r = await a('/api/puzzle/1/answer', { answer: '  СОВА!!! ' });
   assert.equal(r.body.correct, true);
   assert.equal(r.body.place, 1);
   // ~1 минута из 60: цена ≈ 99; +30 за первое место, −2 за ошибку, −15 за подсказку
   assert.ok(r.body.points >= 110 && r.body.points <= 112, 'баллы Алисы: ' + r.body.points);
-  assert.equal((await a('/api/puzzle/1/answer', { answer: 'тюльпан' })).status, 409, 'повторно решить нельзя');
+  assert.equal((await a('/api/puzzle/1/answer', { answer: 'сова' })).status, 409, 'повторно решить нельзя');
 
-  r = await b('/api/puzzle/1/answer', { answer: '1637' });
+  r = await b('/api/puzzle/1/answer', { answer: '2048' });
   assert.equal(r.body.place, 2);
   assert.ok(r.body.points >= 118 && r.body.points <= 119, 'баллы Боба: ' + r.body.points);
 
