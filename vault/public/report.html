@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Хранилище — отчёт</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .wrap { max-width: 1100px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 18px 0 28px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+  .kpi b { display: block; font: 800 36px/1.1 var(--mono); color: var(--gold); font-variant-numeric: tabular-nums; }
+  .kpi span { font-size: 14px; color: var(--muted); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 16px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { font: 600 12px var(--mono); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+  td.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .bar { height: 10px; background: var(--gold); border-radius: 5px; min-width: 2px; }
+  .chart { display: flex; align-items: flex-end; gap: 10px; height: 180px; padding-top: 10px; }
+  .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; font: 12px var(--mono); color: var(--muted); }
+  .chart .b1 { width: 100%; max-width: 46px; background: var(--gold); border-radius: 6px 6px 0 0; }
+  .chart .b2 { width: 100%; max-width: 46px; background: var(--green); border-radius: 6px 6px 0 0; }
+  .legend { font-size: 13px; color: var(--muted); } .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin: 0 6px 0 14px; }
+  .noprint { display: flex; gap: 10px; flex-wrap: wrap; }
+  @media print {
+    body { background: #fff; color: #111; } .noprint { display: none; }
+    .kpi, .card { background: #fff; border-color: #ccc; break-inside: avoid; }
+    .kpi b { color: #0a4fd6; } th, .kpi span, .legend, .chart .col { color: #555; } th, td { border-color: #ddd; }
+    .bar, .chart .b1 { background: #0a4fd6; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .chart .b2 { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="logo" href="/"><i></i>ХРАНИЛИЩЕ · ОТЧЁТ</a></header>
+  <main id="view"><p class="muted">Загрузка…</p></main>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const SRC = { direct: 'Напрямую / QR', vk: 'ВКонтакте', instagram: 'Инстаграм', insta: 'Инстаграм', telegram: 'Telegram', tg: 'Telegram', friend: 'Приглашение друга', search: 'Поисковики', other: 'Другие сайты', qr: 'QR-код', poster: 'Афиша' };
+const srcName = s => SRC[s] || s;
+const DOW = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const dayName = d => { const [y, m, dd] = d.split('-').map(Number); return `${DOW[new Date(Date.UTC(y, m - 1, dd)).getUTCDay()]} ${dd}.${String(m).padStart(2, '0')}`; };
+const fmt = n => Number(n || 0).toLocaleString('ru-RU');
+
+function srcTable(rows, total) {
+  const max = Math.max(1, ...rows.map(r => r.c));
+  return `<table><tr><th>Источник</th><th></th><th style="text-align:right">Чел.</th></tr>${rows.map(r => `<tr><td>${esc(srcName(r.src))}</td>
+    <td style="width:40%"><div class="bar" style="width:${r.c / max * 100}%"></div></td><td class="n">${fmt(r.c)}${total ? ` <span class="muted">· ${Math.round(r.c / total * 100)}%</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Пока нет данных</td></tr>'}</table>`;
+}
+
+async function load() {
+  const r = await fetch('/api/admin/report');
+  if (r.status === 401 || r.status === 403) { $('#view').innerHTML = `<p>Нужен вход администратора. <a href="/admin">Войти в админку</a>, потом вернись сюда.</p>`; return; }
+  const d = await r.json(), t = d.totals;
+  const when = new Date(d.now).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  const maxDay = Math.max(1, ...d.days.map(x => Math.max(x.visitors, x.players)));
+  const kpi = (v, l) => `<div class="kpi"><b>${fmt(v)}</b><span>${l}</span></div>`;
+  $('#view').innerHTML = `
+    <h1 style="margin-bottom:4px">Неделя финансовой грамотности СПбГАУ</h1>
+    <p class="muted" style="margin-top:0">Игра «Хранилище» при поддержке банка ВТБ · данные на ${esc(when)} (МСК) · ${esc(d.base_url)}</p>
+    <div class="noprint"><button onclick="print()">Сохранить в PDF</button><button class="ghost" onclick="load()">Обновить</button><a class="btn ghost" href="/admin" style="padding:12px 16px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--text)">← Админка</a></div>
+    <div class="kpis">
+      ${kpi(t.visitors, 'уникальных посетителей сайта')}
+      ${kpi(t.players, 'зарегистрировались в игре')}
+      ${kpi(t.active, 'решили хотя бы одну загадку')}
+      ${kpi(t.groups, 'учебных групп в зачёте')}
+      ${kpi(t.staff, 'преподавателей и сотрудников')}
+      ${kpi(t.attempts, 'попыток ответа')}
+      ${kpi(t.solves, 'взломов замков')}
+      ${kpi(t.warmups, 'ответов на разминки про финансы')}
+      ${kpi(t.vk_bot, 'подписаны на бота ВКонтакте')}
+      ${kpi(t.referrals, 'пришли по приглашению друга')}
+      ${kpi(t.trap, 'попались на учебный «фишинговый» QR')}
+      ${kpi(t.quiz, 'участников квиза')}
+      ${kpi(t.views, 'просмотров страниц')}
+    </div>
+    <div class="card"><b>По дням</b> <span class="legend"><i style="background:var(--gold)"></i>посетители<i style="background:var(--green)"></i>новые игроки</span>
+      <div class="chart">${d.days.map(x => `<div class="col"><span>${x.visitors}</span><div style="display:flex;gap:3px;width:100%;justify-content:center;align-items:flex-end;flex:1">
+        <div class="b1" style="height:${x.visitors / maxDay * 100}%"></div><div class="b2" style="height:${x.players / maxDay * 100}%"></div></div><span>${dayName(x.day)}</span></div>`).join('') || '<p class="muted">Данные начнут копиться с первого визита.</p>'}</div>
+      <table style="margin-top:14px"><tr><th>День</th><th style="text-align:right">Посетители</th><th style="text-align:right">Новые</th><th style="text-align:right">Игроки</th><th style="text-align:right">Попытки</th><th style="text-align:right">Решения</th><th style="text-align:right">Просмотры</th></tr>
+      ${d.days.map(x => `<tr><td>${dayName(x.day)}</td><td class="n">${fmt(x.visitors)}</td><td class="n">${fmt(x.new_visitors)}</td><td class="n">${fmt(x.players)}</td><td class="n">${fmt(x.attempts)}</td><td class="n">${fmt(x.solves)}</td><td class="n">${fmt(x.views)}</td></tr>`).join('')}</table></div>
+    <div class="two">
+      <div class="card"><b>Откуда приходят на сайт</b>${srcTable(d.sources_visitors, d.sources_visitors.reduce((a, b) => a + b.c, 0))}</div>
+      <div class="card"><b>Откуда пришли игроки</b>${srcTable(d.sources_players, t.players)}</div>
+    </div>
+    <div class="card"><b>Загадки</b><table><tr><th>Загадка</th><th style="text-align:right">Пытались</th><th style="text-align:right">Попыток</th><th style="text-align:right">Решили</th></tr>
+      ${d.puzzles.map(p => `<tr><td>${p.kind === 'warmup' ? 'Разминка' : 'Замок №' + p.num} · ${esc(p.title)}</td><td class="n">${fmt(p.triers)}</td><td class="n">${fmt(p.tries)}</td><td class="n">${fmt(p.solvers)}</td></tr>`).join('')}</table></div>
+    <p class="muted" style="font-size:13px">Посетитель считается один раз в день на одном устройстве. Статистика посещений и источников ведётся с 24 ноября; регистрации, попытки и решения учтены с начала недели.</p>`;
+}
+load();
+</script>
+</body>
+</html>

@@ -76,6 +76,16 @@ function renderHeader() {
 }
 
 // ---------- Главная ----------
+function inviteHtml() {
+  const i = S.invite; if (!i) return '';
+  const left = Math.max(0, i.max - i.friends);
+  return `<h2>Позови друга</h2><div class="rules"><div class="rule" style="grid-column:1/-1">
+    <b>+${i.per} баллов тебе и другу</b><span>Отправь свою ссылку. Когда друг войдёт в игру и решит хотя бы разминку, вы оба получите по ${i.per} баллов (тебе — за ${i.max} друзей максимум).</span>
+    <input readonly value="${esc(i.url)}" onclick="this.select()" style="margin:12px 0 10px;font-family:var(--mono)">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button id="invCopy">Поделиться ссылкой</button>
+    <span class="muted" style="font-size:14px">Пришли по твоей ссылке: ${i.friends}${i.pending ? ` · ещё ${i.pending} не решили ни одной загадки` : ''}${left ? '' : ' · лимит бонусов набран'}</span></div></div></div>`;
+}
+
 function renderHome() {
   if (!S) return;
   const ps = S.puzzles.filter(p => p.kind !== 'warmup'), warm = S.puzzles.filter(p => p.kind === 'warmup' && p.open);
@@ -108,6 +118,7 @@ function renderHome() {
       ${nextHtml}${cta}
       <p style="margin-top:18px;font-size:13px;letter-spacing:.08em">ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</p>
     </section>
+    ${inviteHtml()}
     <h2>Как это устроено</h2>
     <div class="steps">
       <div class="step"><span class="sn">01</span><b>Войди через ВКонтакте</b><span>Вступи в сообщество и пришли боту код. Это 30 секунд.</span></div>
@@ -134,6 +145,11 @@ function renderHome() {
       <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые прозвучали на открытии и на мероприятиях недели.</span></div>
     </div>`;
   const c = $('#cta'); if (c) c.onclick = openLogin;
+  const ib = $('#invCopy'); if (ib) ib.onclick = async () => {
+    const url = S.invite.url, text = `Я играю в «Хранилище» — загадки с призом от ВТБ. Заходи по моей ссылке, получим оба +${S.invite.per} баллов: ${url}`;
+    try { if (navigator.share) await navigator.share({ title: 'Хранилище', text, url }); else { await navigator.clipboard.writeText(text); ib.textContent = 'Скопировано ✓'; } }
+    catch { prompt('Скопируй ссылку', url); }
+  };
   $('#view').classList.toggle('appear', firstPaint); firstPaint = false;
   tick();
 }

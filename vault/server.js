@@ -141,10 +141,13 @@ function requireAdmin(ctx) {
   const a = Buffer.from(String(ctx.cookies.adm || '')), b = Buffer.from(adminToken());
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) fail(401, 'Нужен вход администратора');
 }
-function loginAs(res, provider, providerId, name) {
+function loginAs(res, provider, providerId, name, cookies = {}) {
   let u = q('SELECT * FROM users WHERE provider=? AND provider_id=?').get(provider, providerId);
   if (!u) {
-    q('INSERT INTO users(provider,provider_id,display_name,created_at) VALUES(?,?,?,?)').run(provider, providerId, name || '', now());
+    const ref = Number(cookies.ref) || null;
+    const refOk = ref && q('SELECT 1 FROM users WHERE id=?').get(ref) ? ref : null;
+    q('INSERT INTO users(provider,provider_id,display_name,created_at,src,ref_by) VALUES(?,?,?,?,?,?)')
+      .run(provider, providerId, name || '', now(), String(cookies.src || 'direct').slice(0, 20), refOk);
     u = q('SELECT * FROM users WHERE provider=? AND provider_id=?').get(provider, providerId);
   }
   const sid = rand(24);
@@ -163,6 +166,44 @@ function openPuzzle(num) {
 const hintsUsed = (uid, pid) => q('SELECT COUNT(*) c FROM hint_uses WHERE user_id=? AND puzzle_id=?').get(uid, pid).c;
 const wrongCount = (uid, pid) => q('SELECT COUNT(*) c FROM attempts WHERE user_id=? AND puzzle_id=? AND correct=0').get(uid, pid).c;
 const contestOver = () => { const e = endsAt(); return e > 0 && now() >= e; };
+
+// ---------- Приглашения друзей ----------
+// Бонус начисляется, когда приглашённый решит хоть что-то (даже разминку): так нельзя накрутить баллы пустыми аккаунтами.
+const REF_BONUS = 5, REF_MAX = 10;
+function creditReferral(u) {
+  if (!u.ref_by || u.ref_done || u.ref_by === u.id) return;
+  q('UPDATE users SET ref_done=1, bonus=bonus+? WHERE id=?').run(REF_BONUS, u.id);
+  const done = q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.ref_by).c;
+  if (done <= REF_MAX) q('UPDATE users SET bonus=bonus+? WHERE id=? AND banned=0').run(REF_BONUS, u.ref_by);
+}
+
+// ---------- Статистика посещений ----------
+const mskDay = t => new Date(t + 3 * 3600000).toISOString().slice(0, 10);
+function sourceOf(url, req) {
+  const tag = (url.searchParams.get('src') || url.searchParams.get('utm_source') || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20);
+  if (tag) return tag;
+  if (url.searchParams.get('r')) return 'friend';
+  let host = ''; try { host = new URL(req.headers.referer || '').hostname; } catch { /* нет реферера */ }
+  if (!host || host === new URL(cfg.baseUrl).hostname) return 'direct';
+  if (/(^|\.)(vk\.com|vk\.ru|vk\.me)$/.test(host)) return 'vk';
+  if (/instagram|ig\.me/.test(host)) return 'instagram';
+  if (/(^|\.)t\.me$|telegram/.test(host)) return 'telegram';
+  if (/yandex|google|bing/.test(host)) return 'search';
+  return 'other';
+}
+function trackVisit(req, res, url, pathname) {
+  try {
+    const cookies = parseCookies(req), t = now(), day = mskDay(t);
+    let vid = cookies.v, first = 0;
+    if (!/^[a-f0-9]{20}$/.test(vid || '')) { vid = rand(10); first = 1; setCookie(res, 'v', vid, 60 * 60 * 24 * 365); }
+    const src = sourceOf(url, req);
+    if (!cookies.src || src !== 'direct') setCookie(res, 'src', cookies.src && src === 'direct' ? cookies.src : src, 60 * 60 * 24 * 30);
+    const r = Number(url.searchParams.get('r'));
+    if (r > 0 && !cookies.sid) setCookie(res, 'ref', String(r), 60 * 60 * 24 * 30);
+    q('INSERT OR IGNORE INTO visits(day,vid,src,first) VALUES(?,?,?,?)').run(day, vid, src === 'direct' && cookies.src ? cookies.src : src, first);
+    q('INSERT INTO pageviews(day,path,n) VALUES(?,?,1) ON CONFLICT(day,path) DO UPDATE SET n=n+1').run(day, pathname);
+  } catch (e) { console.error('trackVisit', e.message); }
+}
 
 // ---------- Маршруты ----------
 const routes = [];
@@ -183,15 +224,16 @@ route('GET', /^\/api\/state$/, ctx => {
       solved: mine || null,
     };
   });
-  const total = u ? q('SELECT COALESCE(SUM(points),0) t FROM solves WHERE user_id=?').get(u.id).t : 0;
-  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles,
+  const total = u ? q('SELECT COALESCE(SUM(points),0) t FROM solves WHERE user_id=?').get(u.id).t + (u.bonus || 0) : 0;
+  const invite = u && u.nick ? { url: `${cfg.baseUrl}/?r=${u.id}`, friends: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.id).c, pending: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=0').get(u.id).c, per: REF_BONUS, max: REF_MAX } : null;
+  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite,
     login: { tg: !!(cfg.tgToken && cfg.tgUser), vk: !!(cfg.vkToken && cfg.vkScreen), dev: cfg.devLogin } };
 });
 
 route('GET', /^\/api\/leaderboard$/, () => {
-  const all = q(`SELECT u.id, u.nick, u.group_name, u.is_staff, SUM(s.points) total, MAX(s.solved_at) last
-                  FROM solves s JOIN users u ON u.id=s.user_id WHERE u.banned=0
-                  GROUP BY u.id ORDER BY total DESC, last ASC`).all();
+  const all = q(`SELECT u.id, u.nick, u.group_name, u.is_staff, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last
+                  FROM users u LEFT JOIN solves s ON s.user_id=u.id WHERE u.banned=0 AND u.nick IS NOT NULL
+                  GROUP BY u.id HAVING total > 0 ORDER BY total DESC, last ASC`).all();
   const rows = all.filter(r => !r.is_staff), staffRows = all.filter(r => r.is_staff);
   const per = {}, warm = {}, secret = {};
   for (const r of q('SELECT s.user_id, p.num, p.kind, s.points, s.place FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
@@ -243,7 +285,7 @@ route('GET', /^\/api\/auth\/poll$/, ctx => {
   const row = ctx.cookies.pending && q('SELECT * FROM login_codes WHERE pending=?').get(ctx.cookies.pending);
   if (!row || row.created_at < now() - LOGIN_CODE_TTL_MS) return { status: 'expired' };
   if (!row.provider) return { status: 'waiting' };
-  const u = loginAs(ctx.res, row.provider, row.provider_id, row.display_name);
+  const u = loginAs(ctx.res, row.provider, row.provider_id, row.display_name, ctx.cookies);
   q('DELETE FROM login_codes WHERE code=?').run(row.code);
   setCookie(ctx.res, 'pending', '', 0);
   return { status: 'ok', user: publicUser(u) };
@@ -254,7 +296,7 @@ route('POST', /^\/api\/auth\/dev$/, async ctx => {
   const { name } = await ctx.body();
   const id = normalize(name).slice(0, 30);
   if (!id) fail(400, 'Нужно имя');
-  return { status: 'ok', user: publicUser(loginAs(ctx.res, 'dev', id, String(name))) };
+  return { status: 'ok', user: publicUser(loginAs(ctx.res, 'dev', id, String(name), ctx.cookies)) };
 });
 
 route('POST', /^\/api\/auth\/logout$/, ctx => {
@@ -316,6 +358,7 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
   const points = p.kind === 'warmup' || p.kind === 'secret' ? p.max_points
     : finalPoints({ timePts: timeValue(p, t - p.opens_at), place, wrong: wrongCount(u.id, p.id), hintCost });
   q('INSERT INTO solves(user_id,puzzle_id,solved_at,points,place) VALUES(?,?,?,?,?)').run(u.id, p.id, t, points, place);
+  creditReferral(u);
   if (p.kind === 'secret') {
     keeper(`Кто-то нашёл то, что я не показывал. ${u.nick} теперь «Любопытный». Остальные даже не знают, о чём я.`);
   } else if (p.kind !== 'warmup' && u.is_staff) {
@@ -524,7 +567,7 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
       tries: q('SELECT COUNT(*) c FROM attempts WHERE puzzle_id=?').get(p.id).c,
     })),
     users: q(`SELECT u.id, u.provider, u.provider_id, u.display_name, u.nick, u.group_name, u.banned, u.created_at,
-              u.is_staff, COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) total
+              u.is_staff, u.src, u.ref_by, COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) + u.bonus total
               FROM users u ORDER BY total DESC, u.id`).all(),
   };
 });
@@ -643,8 +686,8 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
 // Суперфинал: вопрос и код от кейса видит только экран на сцене (вход администратора).
 route('GET', /^\/api\/admin\/final$/, ctx => {
   requireAdmin(ctx);
-  const top = q(`SELECT u.nick, u.group_name, SUM(s.points) total, MAX(s.solved_at) last FROM solves s JOIN users u ON u.id=s.user_id
-                 WHERE u.banned=0 AND u.is_staff=0 GROUP BY u.id ORDER BY total DESC, last ASC LIMIT 3`).all();
+  const top = q(`SELECT u.nick, u.group_name, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last FROM users u LEFT JOIN solves s ON s.user_id=u.id
+                 WHERE u.banned=0 AND u.is_staff=0 AND u.nick IS NOT NULL GROUP BY u.id HAVING total > 0 ORDER BY total DESC, last ASC LIMIT 3`).all();
   return { top, question: kvGet('final_question') || '', answer: kvGet('final_answer') || '' };
 });
 
@@ -657,6 +700,44 @@ route('GET', /^\/api\/admin\/show$/, ctx => {
   return { team: kvGet('show_team') || '', vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '', photos: parse(kvGet('show_photos'), {}), group: kvGet('show_group') || '',
     trap_count: Number(kvGet('trap_count') || 0), story_phase: story.phase, first_lock: first || null,
     base_url: cfg.baseUrl, vk: !!cfg.vkToken };
+});
+
+// Отчёт для партнёра (ВТБ): все цифры недели на одной странице.
+route('GET', /^\/api\/admin\/report$/, ctx => {
+  requireAdmin(ctx);
+  const one = (sql, ...a) => q(sql).get(...a).c;
+  const players = 'nick IS NOT NULL AND banned=0';
+  const days = {};
+  const day = d => (days[d] = days[d] || { day: d, visitors: 0, new_visitors: 0, players: 0, attempts: 0, solves: 0, views: 0 });
+  for (const r of q('SELECT day, COUNT(*) c, SUM(first) f FROM visits GROUP BY day').all()) Object.assign(day(r.day), { visitors: r.c, new_visitors: r.f });
+  for (const r of q('SELECT day, SUM(n) c FROM pageviews GROUP BY day').all()) day(r.day).views = r.c;
+  for (const r of q(`SELECT created_at t FROM users WHERE ${players}`).all()) day(mskDay(r.t)).players++;
+  for (const r of q('SELECT created_at t FROM attempts').all()) day(mskDay(r.t)).attempts++;
+  for (const r of q('SELECT solved_at t FROM solves').all()) day(mskDay(r.t)).solves++;
+  const groups = new Set(q(`SELECT group_name g FROM users WHERE ${players} AND is_staff=0`).all().map(r => String(r.g || '').toUpperCase().replace(/[^\p{L}\p{N}]+/gu, '')).filter(Boolean));
+  return {
+    now: now(), base_url: cfg.baseUrl,
+    totals: {
+      visitors: one('SELECT COUNT(DISTINCT vid) c FROM visits'),
+      views: one('SELECT COALESCE(SUM(n),0) c FROM pageviews'),
+      players: one(`SELECT COUNT(*) c FROM users WHERE ${players}`),
+      staff: one(`SELECT COUNT(*) c FROM users WHERE ${players} AND is_staff=1`),
+      groups: groups.size,
+      active: one(`SELECT COUNT(DISTINCT s.user_id) c FROM solves s JOIN users u ON u.id=s.user_id WHERE u.banned=0`),
+      attempts: one('SELECT COUNT(*) c FROM attempts'),
+      solves: one("SELECT COUNT(*) c FROM solves s JOIN puzzles p ON p.id=s.puzzle_id WHERE p.kind='lock'"),
+      warmups: one("SELECT COUNT(*) c FROM solves s JOIN puzzles p ON p.id=s.puzzle_id WHERE p.kind='warmup'"),
+      referrals: one('SELECT COUNT(*) c FROM users WHERE ref_done=1'),
+      trap: Number(kvGet('trap_count') || 0),
+      quiz: Object.keys(quiz.players).length,
+      vk_bot: one(`SELECT COUNT(*) c FROM users WHERE ${players} AND provider='vk'`),
+    },
+    days: Object.values(days).sort((a, b) => a.day < b.day ? -1 : 1),
+    sources_visitors: q('SELECT COALESCE(src,\'direct\') src, COUNT(DISTINCT vid) c FROM visits GROUP BY src ORDER BY c DESC').all(),
+    sources_players: q(`SELECT COALESCE(src,'direct') src, COUNT(*) c FROM users WHERE ${players} GROUP BY src ORDER BY c DESC`).all(),
+    puzzles: q("SELECT p.num, p.kind, p.title, p.opens_at, (SELECT COUNT(*) FROM solves WHERE puzzle_id=p.id) solvers, (SELECT COUNT(*) FROM attempts WHERE puzzle_id=p.id) tries, (SELECT COUNT(DISTINCT user_id) FROM attempts WHERE puzzle_id=p.id) triers FROM puzzles p WHERE p.published=1 AND p.kind<>'secret' ORDER BY p.opens_at").all(),
+    pages: q('SELECT path, SUM(n) c FROM pageviews GROUP BY path ORDER BY c DESC LIMIT 10').all(),
+  };
 });
 
 route('POST', /^\/api\/admin\/broadcast$/, async ctx => {
@@ -673,7 +754,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html' };
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));
@@ -707,7 +788,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
     if (pathname.startsWith('/uploads/')) {
       if (serveFile(res, UPLOAD_DIR, pathname.slice('/uploads/'.length))) return;
-    } else if (serveFile(res, PUBLIC_DIR, PAGES[pathname] || pathname.slice(1))) return;
+    } else {
+      if (PAGES[pathname] && req.method === 'GET' && !pathname.startsWith('/stage') && pathname !== '/admin' && pathname !== '/report') trackVisit(req, res, url, pathname);
+      if (serveFile(res, PUBLIC_DIR, PAGES[pathname] || pathname.slice(1))) return;
+    }
     // Страница «не найдено» от Хранителя
     const nf = path.join(PUBLIC_DIR, '404.html');
     res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
