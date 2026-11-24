@@ -710,6 +710,18 @@ route('POST', /^\/api\/admin\/puzzle$/, async ctx => {
   return { ok: true };
 });
 
+// Молниеносный замок запускается одной кнопкой: открывается прямо сейчас, бот сразу пишет всем.
+route('POST', /^\/api\/admin\/puzzle\/(\d+)\/launch$/, ctx => {
+  requireAdmin(ctx);
+  const p = q('SELECT * FROM puzzles WHERE num=?').get(Number(ctx.params[0]));
+  if (!p || p.kind !== 'flash') fail(404, 'Молниеносный замок не найден');
+  if (!parse(p.answers, []).length) fail(400, 'У замка нет ответа');
+  if (p.published && p.opens_at <= now()) fail(409, 'Этот замок уже запускали');
+  q('UPDATE puzzles SET opens_at=?, published=1, notified_open=0, notified_soon=1 WHERE id=?').run(now(), p.id);
+  notifyTick();
+  return { ok: true, closes_at: now() + p.decay_minutes * 60000 };
+});
+
 route('POST', /^\/api\/admin\/puzzle\/(\d+)\/delete$/, ctx => {
   requireAdmin(ctx);
   const p = q('SELECT id FROM puzzles WHERE num=?').get(Number(ctx.params[0]));

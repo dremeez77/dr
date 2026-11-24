@@ -68,7 +68,7 @@ function paneP() {
   if (editing) return editP(editing);
   $('#pane').innerHTML = `
     <div class="tbl-scroll"><table class="tbl"><thead><tr><th>№</th><th>Название</th><th>Открытие</th><th>Баллы</th><th>Статус</th><th class="r">Решили</th><th class="r">Попыток</th><th></th></tr></thead><tbody>
-    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : p.kind === 'secret' ? ' <span class="muted">· пасхалка, на сайте не видна</span>' : p.kind === 'flash' ? ` <span class="muted">· ⚡ молниеносный, живёт ${p.decay_minutes} мин</span>` : ''}</td><td>${when(p.opens_at)}</td>
+    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : p.kind === 'secret' ? ' <span class="muted">· пасхалка, на сайте не видна</span>' : p.kind === 'flash' ? ` <span class="muted">· ⚡ молниеносный, живёт ${p.decay_minutes} мин</span>${p.published && p.opens_at <= Date.now() ? '' : ` <button class="small" data-launch="${p.num}">⚡ Запустить сейчас</button>`}` : ''}</td><td>${when(p.opens_at)}</td>
       <td class="mono">${p.max_points}→${p.min_points} за ${p.decay_minutes} мин</td>
       <td>${!p.published ? '<span class="muted">черновик</span>' : p.opens_at <= D.now ? '<span class="green">открыт</span>' : '<span class="gold">ждёт</span>'}</td>
       <td class="r">${p.solvers}</td><td class="r">${p.tries}</td><td><button class="ghost small" data-edit="${p.num}">Изменить</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Замков пока нет</td></tr>'}
@@ -77,6 +77,11 @@ function paneP() {
     <p class="note">Разминка — простой вопрос с фиксированной ценой («Баллов в начале»): без бонусов за скорость и штрафов. Разминкам удобно давать номера с 11.</p>
     <p class="note">Игроки видят только опубликованные замки. До времени открытия им видны номер и таймер, но не название и не текст.</p>`;
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editing = D.puzzles.find(p => p.num === Number(b.dataset.edit)); paneP(); });
+  document.querySelectorAll('[data-launch]').forEach(b => b.onclick = async () => {
+    const p = D.puzzles.find(x => x.num === Number(b.dataset.launch));
+    if (!confirm(`Запустить молниеносный замок №${p.num} «${p.title}» прямо сейчас? Бот сразу напишет всем, замок проживёт ${p.decay_minutes} мин.`)) return;
+    try { await api(`/api/admin/puzzle/${p.num}/launch`, {}); alert('Запущен! Бот рассылает оповещение.'); load(); } catch (e) { alert(e.message); }
+  });
   $('#imp').onclick = async () => {
     const f = $('#pack').files[0]; if (!f) { $('#impmsg').textContent = 'Сначала выбери файл набора (.json)'; return; }
     $('#impmsg').textContent = 'Загружаю…';
