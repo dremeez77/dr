@@ -48,6 +48,22 @@ const SRC = { direct: 'Напрямую / QR', vk: 'ВКонтакте', instagr
 const srcName = s => SRC[s] || s;
 const DOW = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const dayName = d => { const [y, m, dd] = d.split('-').map(Number); return `${DOW[new Date(Date.UTC(y, m - 1, dd)).getUTCDay()]} ${dd}.${String(m).padStart(2, '0')}`; };
+const FB = { yes: 'Да, много', some: 'Немного', no: 'Нет', maybe: 'Может быть', show: 'Шоу-открытие', masterclass: 'Мастер-класс по бюджету', debates: 'Дебаты', credit: 'Ликбез по кредитам', deal: 'Игра «Сделка»', quiz: 'Квиз', puzzles: 'Загадки на сайте' };
+const AGAIN = { yes: 'Да', maybe: 'Может быть', no: 'Нет' };
+function distTable(obj, names, total) {
+  const rows = Object.entries(obj).sort((a, b) => b[1] - a[1]), max = Math.max(1, ...rows.map(r => r[1]));
+  return `<table>${rows.map(([k, c]) => `<tr><td>${esc(names[k] || k)}</td><td style="width:40%"><div class="bar" style="width:${c / max * 100}%"></div></td><td class="n">${c}${total ? ` <span class="muted">· ${Math.round(c / total * 100)}%</span>` : ''}</td></tr>`).join('')}</table>`;
+}
+function fbHtml(f) {
+  if (!f || !f.count) return `<div class="card"><b>Отзывы участников</b><p class="muted">Анкета: ${esc(location.origin)}/feedback. Ответов пока нет.</p></div>`;
+  return `<div class="card"><b>Отзывы участников · анкет: ${f.count}</b>
+    <div class="kpis" style="margin:14px 0"><div class="kpi"><b>${f.avg.toFixed(1)}</b><span>средняя оценка из 5</span></div>
+    <div class="kpi"><b>${Math.round((f.learned.yes + f.learned.some) / f.count * 100)}%</b><span>узнали новое о деньгах</span></div>
+    <div class="kpi"><b>${Math.round(f.again.yes / f.count * 100)}%</b><span>точно придут ещё</span></div></div>
+    <div class="two"><div><p class="muted" style="margin:0 0 6px">Узнали новое о деньгах</p>${distTable(f.learned, FB, f.count)}<p class="muted" style="margin:16px 0 6px">Придут ещё</p>${distTable(f.again, AGAIN, f.count)}</div>
+    <div><p class="muted" style="margin:0 0 6px">Самое полезное</p>${distTable(f.useful, FB, f.count)}</div></div>
+    ${f.comments.length ? `<p class="muted" style="margin:18px 0 6px">Комментарии</p>${f.comments.map(c => `<p style="margin:0 0 10px;padding:10px 12px;border-left:3px solid var(--gold);background:#061036;border-radius:6px">${esc(c.text)} <span class="muted">· ${c.rating}/5</span></p>`).join('')}` : ''}</div>`;
+}
 const fmt = n => Number(n || 0).toLocaleString('ru-RU');
 
 function srcTable(rows, total) {
@@ -93,6 +109,7 @@ async function load() {
     </div>
     <div class="card"><b>Загадки</b><table><tr><th>Загадка</th><th style="text-align:right">Пытались</th><th style="text-align:right">Попыток</th><th style="text-align:right">Решили</th></tr>
       ${d.puzzles.map(p => `<tr><td>${p.kind === 'warmup' ? 'Разминка' : 'Замок №' + p.num} · ${esc(p.title)}</td><td class="n">${fmt(p.triers)}</td><td class="n">${fmt(p.tries)}</td><td class="n">${fmt(p.solvers)}</td></tr>`).join('')}</table></div>
+    ${fbHtml(d.feedback)}
     <p class="muted" style="font-size:13px">Посетитель считается один раз в день на одном устройстве. Статистика посещений и источников ведётся с 24 ноября; регистрации, попытки и решения учтены с начала недели.</p>`;
 }
 load();

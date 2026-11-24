@@ -246,6 +246,10 @@ function paneSet() {
   if (D.auction_price) $('#gk').value = D.auction_price; // цена, которую техник ввёл на слайде аукциона
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card"><b>Анкета после недели</b>
+    <p class="note">Анкета всегда доступна по ссылке <a href="/feedback" target="_blank">/feedback</a>. Галочка показывает на главной карточку «Оцени неделю». Включи в пятницу после финала и отправь ссылку через «Рассылку». Ответы появятся в <a href="/report" target="_blank">/report</a>.</p>
+    <label class="chk"><input type="checkbox" id="fbOn" ${D.feedback_on ? 'checked' : ''}> Показывать анкету на главной</label><span class="ok" id="fbok"></span></div>`);
+  $('#fbOn').onchange = async e => { await api('/api/admin/settings', { feedback_on: e.target.checked }); $('#fbok').textContent = ' Сохранено'; };
 }
 
 load();

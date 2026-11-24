@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Хранилище — как тебе неделя?</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .wrap { max-width: 640px; }
+  .q { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  .q > b { display: block; margin-bottom: 12px; font-size: 17px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .opts label { margin: 0; display: inline-flex; align-items: center; cursor: pointer; }
+  .opts input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .opts span { display: inline-block; padding: 10px 14px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); font-size: 15px; background: #061036; transition: .15s; }
+  .opts input:checked + span { background: var(--gold); border-color: var(--gold); color: #111; font-weight: 600; }
+  .opts input:focus-visible + span { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .stars span { font: 700 20px/1 var(--mono); width: 52px; text-align: center; padding: 14px 0; }
+  .err { color: var(--red); min-height: 22px; margin: 8px 0; }
+  .done { text-align: center; padding: 50px 10px; }
+  .done b { font: 800 28px/1.2 var(--sans); display: block; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="logo" href="/"><i></i>ХРАНИЛИЩЕ</a></header>
+  <main id="view">
+    <h1 style="margin-bottom:6px">Как тебе неделя?</h1>
+    <p class="muted" style="margin-top:0">Неделя финансовой грамотности СПбГАУ. Анкета анонимная, займёт минуту. Ответы помогут сделать следующую неделю лучше.</p>
+    <form id="f">
+      <div class="q"><b>Оцени неделю целиком</b><div class="opts stars"></div></div>
+      <div class="q"><b>Узнал(а) что-то новое о деньгах?</b><div class="opts" data-name="learned" data-opts="yes:Да, много|some:Немного|no:Нет, всё знал(а)"></div></div>
+      <div class="q"><b>Что было самым полезным или интересным?</b><p class="muted" style="margin:-6px 0 10px;font-size:14px">Можно выбрать несколько</p>
+        <div class="opts" data-name="useful" data-multi="1" data-opts="show:Шоу-открытие|masterclass:Мастер-класс по бюджету|debates:Дебаты|credit:Ликбез по кредитам|deal:Игра «Сделка»|quiz:Квиз|puzzles:Загадки на сайте"></div></div>
+      <div class="q"><b>Придёшь на такую неделю ещё раз?</b><div class="opts" data-name="again" data-opts="yes:Да|maybe:Может быть|no:Нет"></div></div>
+      <div class="q"><b>Что улучшить или что понравилось больше всего?</b><textarea id="text" maxlength="1000" rows="4" placeholder="Необязательно"></textarea></div>
+      <div class="err" id="err"></div>
+      <button style="width:100%">Отправить</button>
+    </form>
+  </main>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+document.querySelector('.stars').innerHTML = [1, 2, 3, 4, 5].map(n => `<label><input type="radio" name="rating" value="${n}"><span>${n}</span></label>`).join('');
+document.querySelectorAll('[data-opts]').forEach(box => {
+  const name = box.dataset.name, type = box.dataset.multi ? 'checkbox' : 'radio';
+  box.innerHTML = box.dataset.opts.split('|').map(o => { const [v, l] = o.split(':'); return `<label><input type="${type}" name="${name}" value="${v}"><span>${l}</span></label>`; }).join('');
+});
+const done = () => { $('#view').innerHTML = `<div class="done"><b>Спасибо!</b><p class="muted">Твой ответ записан. Хранитель запомнит.</p><p><a class="btn" href="/" style="display:inline-block;padding:12px 18px;background:var(--gold);color:#111;border-radius:10px;text-decoration:none;font-weight:600">На главную</a></p></div>`; };
+fetch('/api/feedback').then(r => r.json()).then(d => { if (d.done) done(); }).catch(() => {});
+$('#f').onsubmit = async e => {
+  e.preventDefault();
+  const val = n => (document.querySelector(`input[name="${n}"]:checked`) || {}).value;
+  const body = { rating: Number(val('rating')), learned: val('learned'), again: val('again'),
+    useful: [...document.querySelectorAll('input[name="useful"]:checked')].map(i => i.value), text: $('#text').value };
+  if (!body.rating) { $('#err').textContent = 'Поставь оценку от 1 до 5'; return; }
+  try {
+    const r = await fetch('/api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Ошибка');
+    done();
+  } catch (err) { $('#err').textContent = err.message; }
+};
+</script>
+</body>
+</html>

@@ -177,6 +177,28 @@ function creditReferral(u) {
   if (done <= REF_MAX) q('UPDATE users SET bonus=bonus+? WHERE id=? AND banned=0').run(REF_BONUS, u.ref_by);
 }
 
+// ---------- Значки ----------
+// Считаются на лету из решений, поэтому их не нужно хранить и пересчитывать.
+function badgesMap() {
+  const m = new Map(), add = (id, b) => { const a = m.get(id) || []; if (!a.includes(b)) a.push(b); m.set(id, a); };
+  const lockTotal = q("SELECT COUNT(*) c FROM puzzles WHERE published=1 AND kind='lock'").get().c;
+  const locks = new Map(), warms = new Map(), hinted = new Set();
+  for (const h of q('SELECT DISTINCT user_id, puzzle_id FROM hint_uses').all()) hinted.add(h.user_id + ':' + h.puzzle_id);
+  for (const r of q('SELECT s.user_id, s.puzzle_id, s.place, s.solved_at, p.kind, p.opens_at FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
+    if (r.kind === 'secret') add(r.user_id, 'curious');
+    else if (r.kind === 'warmup') warms.set(r.user_id, (warms.get(r.user_id) || 0) + 1);
+    else {
+      const l = locks.get(r.user_id) || { n: 0, clean: 0 }; l.n++; if (!hinted.has(r.user_id + ':' + r.puzzle_id)) l.clean++; locks.set(r.user_id, l);
+      if (r.place === 1) add(r.user_id, 'first');
+      if (r.solved_at - r.opens_at <= 30 * 60000) add(r.user_id, 'fast');
+    }
+  }
+  for (const [id, l] of locks) { if (l.clean >= 2) add(id, 'clean'); if (lockTotal >= 2 && l.n >= lockTotal) add(id, 'all'); }
+  for (const [id, n] of warms) if (n >= 3) add(id, 'warm');
+  for (const r of q('SELECT ref_by id, COUNT(*) c FROM users WHERE ref_done=1 AND ref_by IS NOT NULL GROUP BY ref_by').all()) if (r.c >= 3) add(r.id, 'friends');
+  return m;
+}
+
 // ---------- Статистика посещений ----------
 const mskDay = t => new Date(t + 3 * 3600000).toISOString().slice(0, 10);
 function sourceOf(url, req) {
@@ -226,7 +248,7 @@ route('GET', /^\/api\/state$/, ctx => {
   });
   const total = u ? q('SELECT COALESCE(SUM(points),0) t FROM solves WHERE user_id=?').get(u.id).t + (u.bonus || 0) : 0;
   const invite = u && u.nick ? { url: `${cfg.baseUrl}/?r=${u.id}`, friends: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.id).c, pending: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=0').get(u.id).c, per: REF_BONUS, max: REF_MAX } : null;
-  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite,
+  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
     login: { tg: !!(cfg.tgToken && cfg.tgUser), vk: !!(cfg.vkToken && cfg.vkScreen), dev: cfg.devLogin } };
 });
 
@@ -235,7 +257,7 @@ route('GET', /^\/api\/leaderboard$/, () => {
                   FROM users u LEFT JOIN solves s ON s.user_id=u.id WHERE u.banned=0 AND u.nick IS NOT NULL
                   GROUP BY u.id HAVING total > 0 ORDER BY total DESC, last ASC`).all();
   const rows = all.filter(r => !r.is_staff), staffRows = all.filter(r => r.is_staff);
-  const per = {}, warm = {}, secret = {};
+  const per = {}, warm = {}, secret = {}, bm = badgesMap();
   for (const r of q('SELECT s.user_id, p.num, p.kind, s.points, s.place FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
     if (r.kind === 'secret') secret[r.user_id] = true;
     else if (r.kind === 'warmup') warm[r.user_id] = (warm[r.user_id] || 0) + r.points;
@@ -257,8 +279,8 @@ route('GET', /^\/api\/leaderboard$/, () => {
     now: now(),
     players: q('SELECT COUNT(*) c FROM users WHERE nick IS NOT NULL AND banned=0').get().c,
     groups,
-    staff: staffRows.slice(0, 50).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total })),
-    rows: rows.slice(0, 200).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total, locks: per[r.id] || {}, warm: warm[r.id] || 0, curious: !!secret[r.id] })),
+    staff: staffRows.slice(0, 50).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total, badges: bm.get(r.id) || [] })),
+    rows: rows.slice(0, 200).map((r, i) => ({ rank: i + 1, id: r.id, nick: r.nick, group: r.group_name, total: r.total, locks: per[r.id] || {}, warm: warm[r.id] || 0, curious: !!secret[r.id], badges: bm.get(r.id) || [] })),
   };
 });
 
@@ -559,7 +581,7 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
     now: now(), ends_at: endsAt(), base_url: cfg.baseUrl,
     bots: { tg: !!cfg.tgToken, vk: !!cfg.vkToken },
     trap_count: Number(kvGet('trap_count') || 0),
-    final_question: kvGet('final_question') || '', final_answer: kvGet('final_answer') || '',
+    feedback_on: kvGet('feedback_on') === '1', final_question: kvGet('final_question') || '', final_answer: kvGet('final_answer') || '',
     show_team: kvGet('show_team') || '', show_vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '', show_photos: parse(kvGet('show_photos'), {}), show_group: kvGet('show_group') || '',
     puzzles: q('SELECT * FROM puzzles ORDER BY num').all().map(p => ({
       ...p, answers: parse(p.answers, []), hints: parse(p.hints, []),
@@ -670,6 +692,7 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
   const b = await ctx.body();
   if (b.ends_at !== undefined) kvSet('ends_at', Number(b.ends_at) || 0);
   if (b.reset_trap) kvSet('trap_count', 0);
+  if (b.feedback_on !== undefined) kvSet('feedback_on', b.feedback_on ? '1' : '0');
   if (b.final_question !== undefined) kvSet('final_question', String(b.final_question));
   for (const k of ['show_team', 'show_vtb', 'auction_price']) if (b[k] !== undefined) kvSet(k, String(b[k]).slice(0, 2000));
   // Фото команды для слайда «Кто мы»: { «Имя Фамилия»: «/uploads/…» }. Принимаем только загруженные на сайт файлы.
@@ -701,6 +724,40 @@ route('GET', /^\/api\/admin\/show$/, ctx => {
     trap_count: Number(kvGet('trap_count') || 0), story_phase: story.phase, first_lock: first || null,
     base_url: cfg.baseUrl, vk: !!cfg.vkToken };
 });
+
+// --- Анкета после недели ---
+const FB_LEARNED = ['yes', 'some', 'no'], FB_AGAIN = ['yes', 'maybe', 'no'];
+const FB_USEFUL = ['show', 'masterclass', 'debates', 'credit', 'deal', 'quiz', 'puzzles'];
+route('GET', /^\/api\/feedback$/, ctx => {
+  let vid = ctx.cookies.v;
+  if (!/^[a-f0-9]{20}$/.test(vid || '')) { vid = rand(10); setCookie(ctx.res, 'v', vid, 60 * 60 * 24 * 365); }
+  return { done: !!q('SELECT 1 FROM feedback WHERE vid=?').get(vid) };
+});
+route('POST', /^\/api\/feedback$/, async ctx => {
+  rateLimit('fb:' + ctx.ip, 300, 60000);
+  const vid = ctx.cookies.v;
+  if (!/^[a-f0-9]{20}$/.test(vid || '')) fail(400, 'Обнови страницу');
+  const b = await ctx.body();
+  const rating = Number(b.rating);
+  if (!(rating >= 1 && rating <= 5)) fail(400, 'Поставь оценку от 1 до 5');
+  const learned = FB_LEARNED.includes(b.learned) ? b.learned : null, again = FB_AGAIN.includes(b.again) ? b.again : null;
+  const useful = Array.isArray(b.useful) ? b.useful.filter(x => FB_USEFUL.includes(x)) : [];
+  const text = String(b.text || '').trim().slice(0, 1000);
+  q(`INSERT INTO feedback(vid,user_id,rating,learned,useful,again,text,created_at) VALUES(?,?,?,?,?,?,?,?)
+     ON CONFLICT(vid) DO UPDATE SET user_id=excluded.user_id, rating=excluded.rating, learned=excluded.learned, useful=excluded.useful, again=excluded.again, text=excluded.text, created_at=excluded.created_at`)
+    .run(vid, ctx.user ? ctx.user.id : null, Math.round(rating), learned, JSON.stringify(useful), again, text, now());
+  return { ok: true };
+});
+function feedbackStats() {
+  const rows = q('SELECT * FROM feedback ORDER BY created_at DESC').all();
+  const cnt = (key, vals) => Object.fromEntries(vals.map(v => [v, rows.filter(r => r[key] === v).length]));
+  const useful = Object.fromEntries(FB_USEFUL.map(v => [v, 0]));
+  for (const r of rows) for (const u of parse(r.useful, [])) if (useful[u] !== undefined) useful[u]++;
+  return { count: rows.length, avg: rows.length ? rows.reduce((a, r) => a + r.rating, 0) / rows.length : 0,
+    ratings: [1, 2, 3, 4, 5].map(n => rows.filter(r => r.rating === n).length),
+    learned: cnt('learned', FB_LEARNED), again: cnt('again', FB_AGAIN), useful,
+    comments: rows.filter(r => r.text).slice(0, 100).map(r => ({ rating: r.rating, text: r.text, at: r.created_at })) };
+}
 
 // Отчёт для партнёра (ВТБ): все цифры недели на одной странице.
 route('GET', /^\/api\/admin\/report$/, ctx => {
@@ -736,6 +793,7 @@ route('GET', /^\/api\/admin\/report$/, ctx => {
     sources_visitors: q('SELECT COALESCE(src,\'direct\') src, COUNT(DISTINCT vid) c FROM visits GROUP BY src ORDER BY c DESC').all(),
     sources_players: q(`SELECT COALESCE(src,'direct') src, COUNT(*) c FROM users WHERE ${players} GROUP BY src ORDER BY c DESC`).all(),
     puzzles: q("SELECT p.num, p.kind, p.title, p.opens_at, (SELECT COUNT(*) FROM solves WHERE puzzle_id=p.id) solvers, (SELECT COUNT(*) FROM attempts WHERE puzzle_id=p.id) tries, (SELECT COUNT(DISTINCT user_id) FROM attempts WHERE puzzle_id=p.id) triers FROM puzzles p WHERE p.published=1 AND p.kind<>'secret' ORDER BY p.opens_at").all(),
+    feedback: feedbackStats(),
     pages: q('SELECT path, SUM(n) c FROM pageviews GROUP BY path ORDER BY c DESC LIMIT 10').all(),
   };
 });
@@ -754,7 +812,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html' };
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));

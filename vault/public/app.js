@@ -76,6 +76,76 @@ function renderHeader() {
 }
 
 // ---------- Главная ----------
+const BADGES = {
+  first: ['🥇', 'Первооткрыватель', 'Первым открыл замок'],
+  fast: ['⚡', 'Молния', 'Открыл замок за 30 минут после старта'],
+  clean: ['🧠', 'Своим умом', 'Два замка без подсказок'],
+  all: ['🔓', 'Взломщик', 'Открыл все замки'],
+  warm: ['☕', 'Разогретый', 'Решил три разминки'],
+  friends: ['🤝', 'Душа компании', 'Привёл трёх друзей'],
+  curious: ['🗝', 'Любопытный', 'Нашёл то, что не показывали'],
+};
+const badgeIcons = list => (list || []).filter(b => BADGES[b]).map(b => `<span title="${BADGES[b][1]}: ${BADGES[b][2]}">${BADGES[b][0]}</span>`).join('');
+
+function myPlace() {
+  if (!board || !S || !S.user) return null;
+  const r = board.rows.find(x => x.id === S.user.id) || (board.staff || []).find(x => x.id === S.user.id);
+  return r ? { rank: r.rank, staff: !board.rows.includes(r), of: board.rows.includes(r) ? board.players : (board.staff || []).length } : null;
+}
+
+function meHtml() {
+  if (!S || !S.user || !S.user.nick) return '';
+  const mine = S.badges || [];
+  return `<h2>Твои значки</h2><div class="badges">${Object.entries(BADGES).map(([k, [ic, name, how]]) => {
+    const on = mine.includes(k), secret = k === 'curious' && !on;
+    return `<div class="badge ${on ? 'on' : ''}"><span class="bi">${secret ? '❔' : ic}</span><b>${secret ? 'Секретный' : name}</b><span>${secret ? 'Как получить — секрет' : how}</span></div>`;
+  }).join('')}</div>
+  <p style="margin-top:14px"><button id="cardBtn" class="ghost">📸 Карточка для сторис</button></p>`;
+}
+
+function feedbackHtml() {
+  if (!S || !S.feedback_on) return '';
+  return `<a href="/feedback" style="display:block;margin:22px 0 0;padding:18px;border:1px solid var(--gold);border-radius:16px;background:var(--panel);text-decoration:none;color:var(--text)">
+    <span class="muted" style="font:600 12px var(--mono);letter-spacing:.14em">АНКЕТА · 1 МИНУТА</span><b style="display:block;font-size:20px;margin:6px 0 4px">Как тебе неделя? →</b>
+    <span class="muted" style="font-size:14px">Оцени мероприятия — это поможет сделать следующую неделю лучше</span></a>`;
+}
+
+async function makeCard() {
+  const W = 1080, H = 1920, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d'), F = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif', M = 'ui-monospace, Menlo, Consolas, monospace';
+  const g = c.createRadialGradient(W * .5, H * .32, 50, W * .5, H * .4, 1200); g.addColorStop(0, '#13277a'); g.addColorStop(1, '#040b2c');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  const rr = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+  c.strokeStyle = 'rgba(25,181,254,.25)'; c.lineWidth = 3; rr(40, 40, W - 80, H - 80, 36); c.stroke();
+  c.textAlign = 'center'; c.fillStyle = '#93a5cf'; c.font = `700 34px ${M}`; c.fillText('Х Р А Н И Л И Щ Е', W / 2, 170);
+  c.font = `500 30px ${F}`; c.fillText('Неделя финансовой грамотности СПбГАУ', W / 2, 225);
+  const cx = W / 2, cy = 470; c.strokeStyle = '#19b5fe'; c.lineWidth = 10; c.beginPath(); c.arc(cx, cy, 150, 0, Math.PI * 2); c.stroke();
+  c.strokeStyle = 'rgba(25,181,254,.3)'; c.lineWidth = 3; c.beginPath(); c.arc(cx, cy, 190, 0, Math.PI * 2); c.stroke();
+  c.fillStyle = '#19b5fe'; c.beginPath(); c.arc(cx, cy - 30, 42, 0, Math.PI * 2); c.fill(); c.beginPath(); c.moveTo(cx, cy - 10); c.lineTo(cx - 34, cy + 85); c.lineTo(cx + 34, cy + 85); c.closePath(); c.fill();
+  const pl = myPlace(), total = S.total, nick = S.user.nick, grp = S.user.group || '';
+  c.fillStyle = '#e9edf1'; let nf = 92; c.font = `800 ${nf}px ${F}`; while (c.measureText(nick).width > W - 160 && nf > 40) { nf -= 4; c.font = `800 ${nf}px ${F}`; }
+  c.fillText(nick, W / 2, 790); c.fillStyle = '#93a5cf'; c.font = `500 40px ${F}`; c.fillText(grp, W / 2, 850);
+  const box = (x, y, w, h, big, small, col) => { c.fillStyle = 'rgba(10,21,67,.9)'; c.strokeStyle = '#1d2f73'; c.lineWidth = 3; rr(x, y, w, h, 30); c.fill(); c.stroke();
+    c.fillStyle = col; c.font = `800 120px ${M}`; c.fillText(big, x + w / 2, y + 160); c.fillStyle = '#93a5cf'; c.font = `500 34px ${F}`; c.fillText(small, x + w / 2, y + 220); };
+  box(100, 920, 420, 270, pl ? '#' + pl.rank : '—', pl ? `место из ${pl.of}` : 'место', '#19b5fe');
+  box(560, 920, 420, 270, String(total), 'баллов', '#3ddc84');
+  const locks = S.puzzles.filter(p => p.kind === 'lock'), opened = locks.filter(p => p.solved).length;
+  c.fillStyle = '#e9edf1'; c.font = `700 48px ${F}`; c.fillText(`Замков открыто: ${opened} из ${locks.length}`, W / 2, 1300);
+  const mine = (S.badges || []).filter(b => BADGES[b]);
+  if (mine.length) {
+    c.font = `90px ${F}`; c.fillText(mine.map(b => BADGES[b][0]).join('  '), W / 2, 1460);
+    c.fillStyle = '#93a5cf'; c.font = `500 32px ${F}`; c.fillText(mine.map(b => BADGES[b][1]).join(' · '), W / 2, 1520, W - 140);
+  } else { c.fillStyle = '#93a5cf'; c.font = `500 38px ${F}`; c.fillText('Значки ещё впереди', W / 2, 1450); }
+  c.fillStyle = '#19b5fe'; c.font = `700 52px ${M}`; c.fillText(location.host || 'hranilischespbgau.ru', W / 2, 1700);
+  c.fillStyle = '#93a5cf'; c.font = `600 28px ${M}`; c.fillText('ПРИ ПОДДЕРЖКЕ БАНКА ВТБ', W / 2, 1770);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png')), url = URL.createObjectURL(blob);
+  const file = new File([blob], 'hranilische.png', { type: 'image/png' });
+  modal(`<h3>Твоя карточка</h3><img src="${url}" alt="Карточка игрока" style="width:100%;border-radius:14px;border:1px solid var(--line)">
+    <p style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 0">${navigator.canShare && navigator.canShare({ files: [file] }) ? '<button id="cShare">Поделиться</button>' : ''}<a class="btn" href="${url}" download="hranilische.png" style="display:inline-block;padding:12px 16px;background:var(--gold);color:#111;border-radius:10px;text-decoration:none;font-weight:600">Скачать</a></p>
+    <p class="muted" style="font-size:14px">Выложи в сторис и добавь стикер «Ссылка» на сайт: друзья смогут вступить в игру.</p>`);
+  const sb = $('#cShare'); if (sb) sb.onclick = () => navigator.share({ files: [file], title: 'Хранилище' }).catch(() => {});
+}
+
 function inviteHtml() {
   const i = S.invite; if (!i) return '';
   const left = Math.max(0, i.max - i.friends);
@@ -118,7 +188,7 @@ function renderHome() {
       ${nextHtml}${cta}
       <p style="margin-top:18px;font-size:13px;letter-spacing:.08em">ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</p>
     </section>
-    ${inviteHtml()}
+    ${feedbackHtml()}${meHtml()}${inviteHtml()}
     <h2>Как это устроено</h2>
     <div class="steps">
       <div class="step"><span class="sn">01</span><b>Войди через ВКонтакте</b><span>Вступи в сообщество и пришли боту код. Это 30 секунд.</span></div>
@@ -145,6 +215,7 @@ function renderHome() {
       <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые прозвучали на открытии и на мероприятиях недели.</span></div>
     </div>`;
   const c = $('#cta'); if (c) c.onclick = openLogin;
+  const cb = $('#cardBtn'); if (cb) cb.onclick = () => makeCard().catch(e => alert('Не получилось: ' + e.message));
   const ib = $('#invCopy'); if (ib) ib.onclick = async () => {
     const url = S.invite.url, text = `Я играю в «Хранилище» — загадки с призом от ВТБ. Заходи по моей ссылке, получим оба +${S.invite.per} баллов: ${url}`;
     try { if (navigator.share) await navigator.share({ title: 'Хранилище', text, url }); else { await navigator.clipboard.writeText(text); ib.textContent = 'Скопировано ✓'; } }
@@ -164,7 +235,7 @@ function boardHtml(limit) {
   if (mine && !rows.includes(mine)) rows = rows.concat(mine);
   return `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}${hasWarm ? '<th class="r" title="Разминки">Р</th>' : ''}<th class="r">Итого</th></tr></thead><tbody>${
     rows.map(r => `<tr class="${r.id === myId ? 'me-row' : ''}"><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td>
-      <td class="nick">${esc(r.nick)}${r.curious ? ' <span title="Любопытный: нашёл секретный замок">🗝</span>' : ''} <span class="grp">${esc(r.group)}</span></td>
+      <td class="nick">${esc(r.nick)} ${badgeIcons(r.badges)} <span class="grp">${esc(r.group)}</span></td>
       ${nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}${hasWarm ? `<td class="r">${r.warm || '<span class="muted">·</span>'}</td>` : ''}
       <td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b>${r.total}</b></td></tr>`).join('')
   }</tbody></table></div>`;

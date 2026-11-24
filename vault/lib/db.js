@@ -84,6 +84,7 @@ function openDb(dataDir) {
     try { db.exec('ALTER TABLE users ADD COLUMN ' + col); } catch { /* колонка уже есть */ }
   db.exec(`
     CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, vid TEXT NOT NULL, src TEXT, first INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
+    CREATE TABLE IF NOT EXISTS feedback (vid TEXT PRIMARY KEY, user_id INTEGER, rating INTEGER, learned TEXT, useful TEXT, again TEXT, text TEXT, created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS pageviews (day TEXT NOT NULL, path TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, path));
   `);
   return db;

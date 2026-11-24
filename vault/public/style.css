@@ -181,3 +181,10 @@ body.deco::after { content: ""; position: fixed; left: 50%; top: -260px; width: 
 .keeper-toast.out { opacity: 0; transform: translate(-50%, 10px); }
 body.glitching .wrap { animation: glitch .12s steps(2) 5; }
 @keyframes glitch { 0% { transform: translate(0); filter: none; } 50% { transform: translate(-6px, 2px) skewX(-4deg); filter: hue-rotate(90deg) contrast(1.6); } 100% { transform: translate(5px, -2px); filter: invert(.9); } }
+
+/* Значки игрока */
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.badge { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; opacity: .45; display: flex; flex-direction: column; gap: 4px; }
+.badge.on { opacity: 1; border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.badge .bi { font-size: 30px; line-height: 1; filter: grayscale(1); } .badge.on .bi { filter: none; }
+.badge b { font-size: 15px; } .badge > span:last-child { font-size: 13px; color: var(--muted); line-height: 1.35; }
