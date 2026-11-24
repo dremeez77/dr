@@ -146,13 +146,33 @@ async function makeCard() {
   const sb = $('#cShare'); if (sb) sb.onclick = () => navigator.share({ files: [file], title: 'Хранилище' }).catch(() => {});
 }
 
+async function showQr() {
+  const url = S.invite.url, qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+  // Картинка для сохранения: QR на белом фоне с подписью, чтобы её можно было переслать или распечатать.
+  const n = qr.getModuleCount(), cell = Math.floor(760 / (n + 8)), size = cell * (n + 8), W = 1080, H = 1350;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d');
+  c.fillStyle = '#040b2c'; c.fillRect(0, 0, W, H);
+  c.textAlign = 'center'; c.fillStyle = '#93a5cf'; c.font = '700 34px ui-monospace, Menlo, monospace'; c.fillText('Х Р А Н И Л И Щ Е', W / 2, 110);
+  c.fillStyle = '#e9edf1'; c.font = '800 54px system-ui, -apple-system, Roboto, Arial, sans-serif'; c.fillText(`${S.user.nick} зовёт тебя в игру`, W / 2, 190, W - 100);
+  const x0 = Math.round((W - size) / 2), y0 = 250; c.fillStyle = '#fff'; c.fillRect(x0, y0, size, size); c.fillStyle = '#040b2c';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) c.fillRect(x0 + (k + 4) * cell, y0 + (r + 4) * cell, cell, cell);
+  c.fillStyle = '#3ddc84'; c.font = '700 44px system-ui, -apple-system, Roboto, Arial, sans-serif'; c.fillText(`+${S.invite.per} баллов вам обоим`, W / 2, y0 + size + 80);
+  c.fillStyle = '#93a5cf'; c.font = '500 30px system-ui, -apple-system, Roboto, Arial, sans-serif'; c.fillText('Загадки с призом от банка ВТБ · выключи VPN, если не открывается', W / 2, y0 + size + 135, W - 80);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png')), img = URL.createObjectURL(blob);
+  const file = new File([blob], 'hranilische-qr.png', { type: 'image/png' });
+  modal(`<h3>Твой QR-код</h3><p class="muted" style="margin:0 0 12px">Дай другу отсканировать камерой телефона или отправь картинку.</p>
+    <div style="background:#fff;padding:14px;border-radius:14px">${qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true })}</div>
+    <p style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 0">${navigator.canShare && navigator.canShare({ files: [file] }) ? '<button id="qShare">Поделиться</button>' : ''}<a class="btn" href="${img}" download="hranilische-qr.png" style="display:inline-block;padding:12px 16px;background:var(--gold);color:#111;border-radius:10px;text-decoration:none;font-weight:600">Скачать картинку</a></p>`);
+  const sb = $('#qShare'); if (sb) sb.onclick = () => navigator.share({ files: [file], title: 'Хранилище' }).catch(() => {});
+}
+
 function inviteHtml() {
   const i = S.invite; if (!i) return '';
   const left = Math.max(0, i.max - i.friends);
   return `<h2>Позови друга</h2><div class="rules"><div class="rule" style="grid-column:1/-1">
     <b>+${i.per} баллов тебе и другу</b><span>Отправь свою ссылку. Когда друг войдёт в игру и решит хотя бы разминку, вы оба получите по ${i.per} баллов (тебе — за ${i.max} друзей максимум).</span>
     <input readonly value="${esc(i.url)}" onclick="this.select()" style="margin:12px 0 10px;font-family:var(--mono)">
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button id="invCopy">Поделиться ссылкой</button>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button id="invCopy">Поделиться ссылкой</button><button id="invQr" class="ghost">Мой QR</button>
     <span class="muted" style="font-size:14px">Пришли по твоей ссылке: ${i.friends}${i.pending ? ` · ещё ${i.pending} не решили ни одной загадки` : ''}${left ? '' : ' · лимит бонусов набран'}</span></div></div></div>`;
 }
 
@@ -216,6 +236,7 @@ function renderHome() {
     </div>`;
   const c = $('#cta'); if (c) c.onclick = openLogin;
   const cb = $('#cardBtn'); if (cb) cb.onclick = () => makeCard().catch(e => alert('Не получилось: ' + e.message));
+  const qb = $('#invQr'); if (qb) qb.onclick = () => showQr().catch(e => alert('Не получилось: ' + e.message));
   const ib = $('#invCopy'); if (ib) ib.onclick = async () => {
     const url = S.invite.url, text = `Я играю в «Хранилище» — загадки с призом от ВТБ. Заходи по моей ссылке, получим оба +${S.invite.per} баллов: ${url}`;
     try { if (navigator.share) await navigator.share({ title: 'Хранилище', text, url }); else { await navigator.clipboard.writeText(text); ib.textContent = 'Скопировано ✓'; } }
