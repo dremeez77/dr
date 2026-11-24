@@ -266,7 +266,7 @@ route('GET', /^\/api\/state$/, ctx => {
   const total = u ? baseTotal(u) + interestOf(u) : 0;
   const deposit = u && u.nick ? { amount: u.deposit, since: u.dep_at, interest: interestOf(u), rate: DEP_RATE, min: DEP_MIN, free: baseTotal(u), next_at: u.deposit ? u.dep_at + (Math.floor((now() - u.dep_at) / DAY) + 1) * DAY : 0 } : null;
   const invite = u && u.nick ? { url: `${cfg.baseUrl}/?r=${u.id}`, friends: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.id).c, pending: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=0').get(u.id).c, per: REF_BONUS, max: REF_MAX } : null;
-  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, deposit, badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
+  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, deposit, auction: (a => a && (!a.settled || now() - a.ends_at < 12 * 3600000) ? auctionView(a, u) : null)(curAuction()), badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
     login: { tg: !!(cfg.tgToken && cfg.tgUser), vk: !!(cfg.vkToken && cfg.vkScreen), dev: cfg.devLogin } };
 });
 
@@ -366,6 +366,7 @@ route('GET', /^\/api\/puzzle\/(\d+)$/, ctx => {
   const hints = parse(p.hints, []), used = hintsUsed(u.id, p.id);
   const last = q('SELECT MAX(created_at) t FROM attempts WHERE user_id=? AND puzzle_id=?').get(u.id, p.id).t || 0;
   return {
+    auction_hint: (q('SELECT text FROM auctions WHERE puzzle_num=? AND winner_id=? AND settled=1').get(p.num, u.id) || {}).text || null,
     num: p.num, kind: p.kind, title: p.title, body: p.body, opens_at: p.opens_at, closes_at: p.kind === 'flash' ? flashEnd(p) : 0,
     max_points: p.max_points, min_points: p.min_points, decay_minutes: p.decay_minutes,
     solved: q('SELECT points, place, solved_at FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) || null,
@@ -448,6 +449,77 @@ route('POST', /^\/api\/deposit$/, async ctx => {
     return { ok: true, interest: gain };
   }
   fail(400, 'Неизвестное действие');
+});
+
+// --- Аукцион подсказки ---
+// Хранитель продаёт одну сильную подсказку. Ставки вслепую, побеждает самая высокая (при равенстве — ранняя),
+// победитель платит свою ставку. Это продолжение аукциона с открытия: сколько вы готовы переплатить?
+const AUC_MIN = 5;
+const curAuction = () => q('SELECT * FROM auctions ORDER BY id DESC LIMIT 1').get() || null;
+const freePoints = u => baseTotal(u) - (u.deposit || 0);
+function auctionView(a, u) {
+  if (!a) return null;
+  const mine = u ? q('SELECT amount FROM bids WHERE auction_id=? AND user_id=?').get(a.id, u.id) : null;
+  const winner = a.winner_id ? q('SELECT nick, group_name FROM users WHERE id=?').get(a.winner_id) : null;
+  const p = q('SELECT title, hints FROM puzzles WHERE num=?').get(a.puzzle_num);
+  return { id: a.id, num: a.puzzle_num, title: p ? p.title : '', starts_at: a.starts_at, ends_at: a.ends_at, settled: !!a.settled, min: AUC_MIN,
+    bids: a.settled ? a.bids_count : q('SELECT COUNT(*) c FROM bids WHERE auction_id=?').get(a.id).c,
+    my_bid: mine ? mine.amount : null, free: u ? freePoints(u) : 0,
+    winner: winner && { nick: winner.nick, group: winner.group_name }, price: a.settled ? a.price : null,
+    won: !!(u && a.winner_id === u.id), text: u && a.winner_id === u.id ? a.text : null };
+}
+function settleAuctions() {
+  for (const a of q('SELECT * FROM auctions WHERE settled=0 AND ends_at<=?').all(now())) {
+    const bids = q('SELECT b.*, u.nick, u.group_name, u.provider, u.provider_id FROM bids b JOIN users u ON u.id=b.user_id WHERE b.auction_id=? AND u.banned=0 ORDER BY b.amount DESC, b.created_at ASC').all(a.id);
+    // Если у лидера баллов уже не хватает (потратил или положил на вклад), подсказка уходит следующему.
+    let win = null;
+    for (const b of bids) { const u = q('SELECT * FROM users WHERE id=?').get(b.user_id); if (freePoints(u) >= b.amount) { win = b; break; } }
+    q('UPDATE auctions SET settled=1, winner_id=?, price=?, bids_count=? WHERE id=?').run(win ? win.user_id : null, win ? win.amount : null, bids.length, a.id);
+    if (!win) { keeper(`Аукцион закрыт. Подсказку к замку №${a.puzzle_num} никто не купил. Значит, справитесь сами. Посмотрим.`); continue; }
+    q('UPDATE users SET bonus=bonus-? WHERE id=?').run(win.amount, win.user_id);
+    const second = bids.find(b => b.user_id !== win.user_id);
+    const p = q('SELECT hints FROM puzzles WHERE num=?').get(a.puzzle_num), costs = parse(p ? p.hints : '[]', []).map(h => Number(h.cost) || 0);
+    const usual = costs.length ? Math.max(...costs) : 0;
+    keeper(`Аукцион закрыт. Подсказку к замку №${a.puzzle_num} забрал ${win.nick} (${win.group_name}) за ${win.amount} баллов. Ставок: ${bids.length}.`
+      + (second ? (second.amount === win.amount ? ` ${second.nick} предлагал столько же, но позже.` : ` Второе место предлагало ${second.amount}.`) : '')
+      + (usual && win.amount > usual ? ` Обычная подсказка к этому замку стоит ${usual}. Переплата — ${win.amount - usual}. Знакомо, правда?` : ''));
+    bots.send(win, `🔨 Ты выиграл аукцион! Подсказка к замку №${a.puzzle_num}:\n\n${a.text}\n\nСписано ${win.amount} баллов.`).catch(() => {});
+  }
+}
+route('POST', /^\/api\/auction\/bid$/, async ctx => {
+  const u = requirePlayer(ctx), a = curAuction();
+  if (!a || a.settled || a.ends_at <= now()) fail(409, 'Сейчас аукциона нет');
+  if (contestOver()) fail(403, 'Игра завершена');
+  if (u.deposit > 0) fail(403, 'Пока открыт вклад, подсказки недоступны — и на аукционе тоже');
+  const p = q('SELECT id FROM puzzles WHERE num=?').get(a.puzzle_num);
+  if (p && q('SELECT 1 FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id)) fail(409, 'Этот замок ты уже открыл — подсказка тебе ни к чему');
+  const { amount } = await ctx.body();
+  const v = Math.floor(Number(amount));
+  if (v === 0) { q('DELETE FROM bids WHERE auction_id=? AND user_id=?').run(a.id, u.id); return { ok: true, my_bid: null }; }
+  if (!(v >= AUC_MIN)) fail(400, `Минимальная ставка — ${AUC_MIN} баллов`);
+  if (v > freePoints(u)) fail(400, `У тебя только ${freePoints(u)} свободных баллов`);
+  q('INSERT INTO bids(auction_id,user_id,amount,created_at) VALUES(?,?,?,?) ON CONFLICT(auction_id,user_id) DO UPDATE SET amount=excluded.amount, created_at=excluded.created_at').run(a.id, u.id, v, now());
+  return { ok: true, my_bid: v };
+});
+route('POST', /^\/api\/admin\/auction$/, async ctx => {
+  requireAdmin(ctx);
+  const b = await ctx.body();
+  const cur = curAuction();
+  if (cur && !cur.settled) fail(409, 'Предыдущий аукцион ещё идёт');
+  const num = Number(b.num), text = String(b.text || '').trim(), minutes = Math.max(10, Math.min(1440, Number(b.minutes) || 120));
+  const p = q("SELECT * FROM puzzles WHERE num=? AND published=1").get(num);
+  if (!p) fail(400, 'Нет такого опубликованного замка');
+  if (!text) fail(400, 'Нужен текст подсказки');
+  const t = now(), ends = t + minutes * 60000;
+  q('INSERT INTO auctions(puzzle_num,text,starts_at,ends_at) VALUES(?,?,?,?)').run(num, text.slice(0, 2000), t, ends);
+  const hhmm = new Date(ends).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' });
+  keeper(`🔨 Аукцион! Я продаю одну подсказку к замку №${num}. Ставки вслепую до ${hhmm}, получит тот, кто предложит больше всех. Сколько вы готовы заплатить за знание?\n${cfg.baseUrl}`);
+  return { ok: true };
+});
+route('GET', /^\/api\/admin\/auction$/, ctx => {
+  requireAdmin(ctx);
+  const a = curAuction();
+  return { auction: a, bids: a ? q('SELECT b.amount, b.created_at, u.nick, u.group_name FROM bids b JOIN users u ON u.id=b.user_id WHERE b.auction_id=? ORDER BY b.amount DESC, b.created_at').all(a.id) : [] };
 });
 
 // --- Учебный фишинг ---
@@ -807,6 +879,14 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
 });
 
 // Суперфинал: вопрос и код от кейса видит только экран на сцене (вход администратора).
+route('GET', /^\/api\/admin\/vault$/, ctx => {
+  requireAdmin(ctx);
+  const locks = q("SELECT p.num, p.title, (SELECT COUNT(*) FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=p.id AND u.banned=0) solvers FROM puzzles p WHERE p.kind='lock' ORDER BY p.num").all();
+  const top = withInterest(q(`SELECT u.nick, u.group_name, u.deposit, u.dep_at, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last FROM users u LEFT JOIN solves s ON s.user_id=u.id
+                 WHERE u.banned=0 AND u.is_staff=0 AND u.nick IS NOT NULL GROUP BY u.id HAVING total > 0`).all()).slice(0, 3);
+  return { locks, top: top.map(t => ({ nick: t.nick, group: t.group_name, total: t.total })), players: q('SELECT COUNT(*) c FROM users WHERE nick IS NOT NULL AND banned=0').get().c };
+});
+
 route('GET', /^\/api\/admin\/final$/, ctx => {
   requireAdmin(ctx);
   const top = withInterest(q(`SELECT u.nick, u.group_name, u.deposit, u.dep_at, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last FROM users u LEFT JOIN solves s ON s.user_id=u.id
@@ -887,6 +967,7 @@ route('GET', /^\/api\/admin\/report$/, ctx => {
       referrals: one('SELECT COUNT(*) c FROM users WHERE ref_done=1'),
       trap: Number(kvGet('trap_count') || 0),
       quiz: Object.keys(quiz.players).length,
+      auctions: one('SELECT COUNT(*) c FROM auctions WHERE settled=1'), auction_bids: one('SELECT COUNT(*) c FROM bids'),
       deposits: one('SELECT COUNT(*) c FROM users WHERE deposit>0'), deposit_sum: one('SELECT COALESCE(SUM(deposit),0) c FROM users'),
       vk_bot: one(`SELECT COUNT(*) c FROM users WHERE ${players} AND provider='vk'`),
     },
@@ -913,7 +994,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html', '/stage/vault': 'stage-vault.html' };
 const pageFor = p => PAGES[p] || (/^\/bonus\/\d+-[a-f0-9]{12}$/.test(p) ? 'bonus.html' : null);
 
 function serveFile(res, root, rel) {
@@ -967,6 +1048,7 @@ const server = http.createServer(async (req, res) => {
 // ---------- Оповещения по расписанию ----------
 function notifyTick() {
   const t = now();
+  try { settleAuctions(); } catch (e) { console.error('auction', e.message); }
   const users = () => q("SELECT provider, provider_id FROM users WHERE banned=0 AND provider IN ('tg','vk')").all();
   for (const p of q('SELECT * FROM puzzles WHERE published=1 AND notified_open=0 AND opens_at<=?').all(t)) {
     q('UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE id=?').run(p.id);

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сцена: хранилище открыто</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { background: radial-gradient(120vh 90vh at 50% 45%, #0e1c57, #040b2c 70%); color: #e9edf1; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow: hidden; cursor: none; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  #top { position: absolute; top: 5vh; left: 0; right: 0; text-align: center; font: 700 2vw/1 ui-monospace, Menlo, monospace; letter-spacing: .5em; color: #93a5cf; transition: opacity .6s; }
+  #stage { position: absolute; left: 50%; top: 50%; width: 46vh; height: 46vh; transform: translate(-50%, -54%); transition: transform 1.2s cubic-bezier(.6,0,.2,1), opacity 1s; }
+  .orb { position: absolute; inset: 0; border-radius: 50%; transition: all 1.2s;
+    background: radial-gradient(circle at 32% 28%, #fff 0, #bfe3ff 6%, #3c8dff 24%, #1338b8 48%, #060a3a 72%, #000 100%);
+    box-shadow: 0 0 10vh #2f6bff88, 0 0 24vh #2f6bff40, inset -3vh -4vh 8vh #000c; animation: glow 4s ease-in-out infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 14vh #2f6bffaa, 0 0 30vh #2f6bff55, inset -3vh -4vh 8vh #000c; } }
+  .kh { position: absolute; left: 50%; top: 50%; width: 6vh; transform: translate(-50%, -50%); fill: #000c; transition: transform 1s; }
+  .ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: .25vh solid #8fc3ff44; transform: translate(-50%, -50%); }
+  .r1 { width: 72vh; height: 72vh; border-style: dashed; animation: spin 50s linear infinite; } .r2 { width: 60vh; height: 60vh; }
+  @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+  .bolt { position: absolute; left: 50%; top: 50%; width: 11vh; height: 11vh; margin: -5.5vh 0 0 -5.5vh; border-radius: 50%; display: grid; place-items: center;
+    transform: rotate(var(--a)) translate(32vh) rotate(calc(-1 * var(--a))); background: #050b26; border: .3vh solid #1d2f73; transition: border-color .4s, box-shadow .4s; }
+  .bolt svg { width: 5vh; height: 5vh; fill: none; stroke: #93a5cf; stroke-width: 2; stroke-linecap: round; }
+  .bolt .sh { transition: transform .5s cubic-bezier(.2,.9,.3,1.4); transform-origin: 16px 11px; }
+  .bolt i { position: absolute; bottom: -3.4vh; font: 700 1.8vh/1 ui-monospace, monospace; font-style: normal; color: #93a5cf; letter-spacing: .15em; white-space: nowrap; }
+  .bolt.on { border-color: #3ddc84; box-shadow: 0 0 5vh #3ddc84aa; animation: crack 1.1s cubic-bezier(.2,.9,.3,1.4); }
+  .bolt.on svg { stroke: #3ddc84; } .bolt.on .sh { transform: translate(5px, -3px) rotate(18deg); } .bolt.on i { color: #3ddc84; }
+  @keyframes crack { 35% { transform: rotate(var(--a)) translate(32vh) rotate(calc(-1 * var(--a) - 90deg)) scale(1.4); box-shadow: 0 0 10vh #3ddc84; } }
+  #cap { position: absolute; bottom: 9vh; left: 0; right: 0; text-align: center; font-size: 3.4vh; color: #d5def3; min-height: 4vh; transition: opacity .4s; }
+  #cap b { color: #3ddc84; }
+  body.open .orb { background: radial-gradient(circle, #fff 0, #e6fff1 30%, #3ddc84 60%, #0c6b3a 100%); box-shadow: 0 0 30vh #fff, 0 0 60vh #3ddc84; animation: none; }
+  body.open .kh { transform: translate(-50%, -50%) rotate(-90deg); }
+  body.burst #stage { transform: translate(-50%, -54%) scale(7); opacity: 0; }
+  body.burst #top, body.burst #cap { opacity: 0; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .9s; }
+  body.burst #flash { opacity: 1; transition: opacity .25s; } body.after #flash { opacity: 0; transition: opacity 1.4s; }
+  #fin { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; opacity: 0; transition: opacity 1s; padding: 0 6vw; }
+  body.after #fin { opacity: 1; }
+  #fin .lbl { font: 700 2.4vh/1 ui-monospace, monospace; letter-spacing: .4em; color: #93a5cf; }
+  #fin h1 { font-size: 13vh; line-height: 1; margin: 2vh 0 1vh; letter-spacing: -.02em; }
+  #fin .w { opacity: 0; transform: translateY(3vh); transition: all 1s; } body.winner #fin .w { opacity: 1; transform: none; }
+  #fin .nick { font-size: 12vh; font-weight: 800; color: #3ddc84; margin: 1vh 0; text-shadow: 0 0 6vh #3ddc8466; }
+  #fin .meta { font: 600 3.4vh ui-monospace, monospace; color: #93a5cf; }
+  .help { position: fixed; left: 1vw; bottom: 1vh; font: 11px/1 ui-monospace, monospace; color: rgba(128,128,128,.45); }
+</style>
+</head>
+<body>
+<div id="top">Х Р А Н И Л И Щ Е</div>
+<div id="stage">
+  <div class="ring r1"></div><div class="ring r2"></div>
+  <div class="orb"></div><svg class="kh" viewBox="0 0 54 80"><circle cx="27" cy="22" r="16"/><path d="M27 30 L14 74 L40 74 Z"/></svg>
+  <div id="bolts"></div>
+</div>
+<div id="cap"></div>
+<div id="flash"></div>
+<div id="fin"><div class="lbl">ХРАНИЛИЩЕ ОТКРЫТО</div><h1>Приз найден</h1>
+  <div class="w"><div class="lbl" style="margin-top:4vh">ПОБЕДИТЕЛЬ</div><div class="nick" id="nick"></div><div class="meta" id="meta"></div></div></div>
+<div class="help">ПРОБЕЛ или кликер: дальше · ←: назад · R: сначала · F: полный экран · 1/2/3: кто из тройки лидеров победил в суперфинале (по умолчанию 1)</div>
+<script>
+'use strict';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path class="sh" d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+let D = { locks: [1, 2, 3, 4].map(n => ({ num: n, title: '' })), top: [] }, step = 0, pick = 0;
+// Шаги: 0 — всё закрыто; 1–4 — щёлкают замки; 5 — сфера вспыхивает; 6 — вспышка и надпись; 7 — победитель.
+function render() {
+  const L = D.locks.slice(0, 4);
+  document.getElementById('bolts').innerHTML = L.map((p, i) => `<span class="bolt${i < step ? ' on' : ''}" style="--a:${i * 90 - 135}deg">${SVG}<i>№${p.num}</i></span>`).join('');
+  const cap = document.getElementById('cap');
+  cap.innerHTML = step === 0 ? 'Четыре замка. Четыре дня.' : step <= 4 ? `Замок №${L[step - 1].num}${L[step - 1].title ? ' «' + esc(L[step - 1].title) + '»' : ''} — <b>взломан</b>` : '';
+  document.body.classList.toggle('open', step >= 5);
+  document.body.classList.toggle('burst', step >= 6);
+  if (step >= 6) setTimeout(() => document.body.classList.add('after'), 350); else document.body.classList.remove('after');
+  document.body.classList.toggle('winner', step >= 7);
+  const w = (D.top || [])[pick];
+  document.getElementById('nick').textContent = w ? w.nick : '—';
+  document.getElementById('meta').textContent = w ? `${w.group} · ${w.total} баллов` : 'Войдите в админку на этом компьютере';
+}
+addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'Enter') { step = Math.min(7, step + 1); render(); e.preventDefault(); }
+  else if (['1', '2', '3'].includes(e.key)) { pick = Number(e.key) - 1; render(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { step = Math.max(0, step - 1); render(); }
+  else if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') { step = 0; render(); load(); }
+  else if (e.key === 'f' || e.key === 'F' || e.key === 'а' || e.key === 'А') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else document.exitFullscreen(); }
+});
+async function load() {
+  try { const r = await fetch('/api/admin/vault'); if (r.ok) { D = await r.json(); render(); } } catch { /* покажем заглушку */ }
+}
+render(); load();
+</script>
+</body>
+</html>

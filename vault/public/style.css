@@ -188,3 +188,24 @@ body.glitching .wrap { animation: glitch .12s steps(2) 5; }
 .badge.on { opacity: 1; border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
 .badge .bi { font-size: 30px; line-height: 1; filter: grayscale(1); } .badge.on .bi { filter: none; }
 .badge b { font-size: 15px; } .badge > span:last-child { font-size: 13px; color: var(--muted); line-height: 1.35; }
+
+/* Засовы хранилища вокруг сферы */
+.bolt { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+  transform: rotate(var(--a)) translate(128px) rotate(calc(-1 * var(--a))); display: grid; place-items: center;
+  background: #050b26; border: 1.5px solid var(--line); z-index: 2; transition: border-color .4s, box-shadow .4s; }
+.bolt svg { width: 20px; height: 20px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+.bolt i { position: absolute; bottom: -16px; font: 700 10px/1 var(--mono); color: var(--muted); font-style: normal; letter-spacing: .1em; }
+.bolt.hacking { border-color: var(--gold); box-shadow: 0 0 16px rgba(25,181,254,.55); animation: boltPulse 1.6s ease-in-out infinite; }
+.bolt.hacking svg { stroke: var(--gold); }
+.bolt.cracked { border-color: var(--green); box-shadow: 0 0 14px rgba(61,220,132,.45); }
+.bolt.cracked svg { stroke: var(--green); } .bolt.cracked .sh { transform: translate(5px, -3px) rotate(18deg); transform-origin: 16px 11px; }
+.bolt.just { animation: boltCrack 1.4s cubic-bezier(.2,.9,.3,1.4) both; }
+@keyframes boltPulse { 50% { box-shadow: 0 0 26px rgba(25,181,254,.85); } }
+@keyframes boltCrack { 0% { transform: rotate(var(--a)) translate(128px) rotate(calc(-1 * var(--a))) scale(1); box-shadow: 0 0 0 rgba(61,220,132,0); }
+  35% { transform: rotate(var(--a)) translate(128px) rotate(calc(-1 * var(--a) - 90deg)) scale(1.35); box-shadow: 0 0 40px #3ddc84; }
+  100% { transform: rotate(var(--a)) translate(128px) rotate(calc(-1 * var(--a))) scale(1); } }
+.orb-wrap.vopen .orb { background: radial-gradient(circle at 50% 50%, #fff 0, #c9ffe0 12%, #3ddc84 34%, #0c6b3a 62%, #02170d 100%); box-shadow: 0 0 70px #3ddc8488, 0 0 160px #3ddc8444, inset -16px -24px 50px #000a; }
+@media (max-width: 520px) { .bolt { width: 36px; height: 36px; margin: -18px 0 0 -18px; transform: rotate(var(--a)) translate(98px) rotate(calc(-1 * var(--a))); }
+  .bolt svg { width: 16px; height: 16px; } .bolt.just { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .bolt { animation: none !important; } }
+.orb-wrap { margin-bottom: 46px; }

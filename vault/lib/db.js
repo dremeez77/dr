@@ -85,6 +85,9 @@ function openDb(dataDir) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, vid TEXT NOT NULL, src TEXT, first INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
     CREATE TABLE IF NOT EXISTS feedback (vid TEXT PRIMARY KEY, user_id INTEGER, rating INTEGER, learned TEXT, useful TEXT, again TEXT, text TEXT, created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS auctions (id INTEGER PRIMARY KEY, puzzle_num INTEGER NOT NULL, text TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
+      settled INTEGER NOT NULL DEFAULT 0, winner_id INTEGER, price INTEGER, bids_count INTEGER);
+    CREATE TABLE IF NOT EXISTS bids (auction_id INTEGER NOT NULL, user_id INTEGER NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (auction_id, user_id));
     CREATE TABLE IF NOT EXISTS pageviews (day TEXT NOT NULL, path TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, path));
   `);
   return db;

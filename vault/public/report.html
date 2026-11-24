@@ -98,6 +98,7 @@ async function load() {
       ${d.phish && d.phish.sent ? kpi(Math.round((d.phish.sent - d.phish.clicked) / d.phish.sent * 100) + '%', `не перешли по фишинговой ссылке в учениях (${d.phish.clicked} из ${d.phish.sent} перешли)`) : ''}
       ${d.phish && d.phish.sent ? kpi(d.phish.reported, 'распознали фишинг и сообщили о нём') : ''}
       ${kpi(t.deposits, 'держат баллы на вкладе')}
+      ${t.auctions ? kpi(t.auction_bids, 'ставок на аукционах подсказок') : ''}
       ${kpi(t.quiz, 'участников квиза')}
       ${kpi(t.views, 'просмотров страниц')}
     </div>

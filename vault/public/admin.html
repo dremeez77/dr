@@ -188,7 +188,7 @@ function paneSet() {
       <p><a href="/stage/hack" target="_blank">/stage/hack</a> — «взлом» презентации. Пробел запускает помехи и сообщение Хранителя, R — сброс.<br>
          <a href="/stage/trap" target="_blank">/stage/trap</a> — QR «бесплатный кофе». Пробел показывает счётчик попавшихся, B — назад.<br>
          <a href="/board" target="_blank">/board</a> — таблица лидеров на большой экран.<br><a href="/report" target="_blank"><b>/report</b></a> — отчёт для ВТБ: посетители, игроки, источники, графики по дням. Кнопка «Сохранить в PDF».</p>
-      <p><a href="/stage/story" target="_blank">/stage/story</a> — история с голосованием зала.<br><a href="/stage/final" target="_blank">/stage/final</a> — суперфинал в пятницу: тройка лидеров, вопрос, таймер.<br><a href="/stage/quiz" target="_blank">/stage/quiz</a> — квиз на телефонах в пятницу (вопросы в quiz.json).</p>
+      <p><a href="/stage/story" target="_blank">/stage/story</a> — история с голосованием зала.<br><a href="/stage/final" target="_blank">/stage/final</a> — суперфинал в пятницу: тройка лидеров, вопрос, таймер.<br><a href="/stage/vault" target="_blank"><b>/stage/vault</b></a> — открытие хранилища на финале: пробел щёлкает замки по одному, потом дверь открывается и появляется победитель.<br><a href="/stage/quiz" target="_blank">/stage/quiz</a> — квиз на телефонах в пятницу (вопросы в quiz.json).</p>
       <div class="bar"><span>Счётчик ловушки: <b class="mono">${D.trap_count}</b></span><button class="ghost small" id="resetTrap">Обнулить перед выступлением</button></div></div>`;
   $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Суперфинал</b><p class="note">Вопрос для тройки лидеров и ответ на него — код от замка на кейсе. Видны только на экране /stage/final.</p>
       <label>Вопрос (HTML)</label><textarea id="fq" style="min-height:110px">${esc(D.final_question)}</textarea>
@@ -251,6 +251,19 @@ function paneSet() {
   if (D.auction_price) $('#gk').value = D.auction_price; // цена, которую техник ввёл на слайде аукциона
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
+  const locksPub = D.puzzles.filter(p => p.published && p.kind === 'lock');
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="aucCard"><b>🔨 Аукцион подсказки</b>
+    <p class="note">Хранитель продаёт одну сильную подсказку к замку. Игроки ставят баллы вслепую, получает самая высокая ставка и платит её. Бот объявит старт и итог сам, победителю пришлёт подсказку в личку. Подсказка должна быть сильнее обычной платной — иначе за неё не будут бороться.</p>
+    <div class="grid"><div><label>Замок</label><select id="aucNum">${locksPub.map(p => `<option value="${p.num}">№${p.num} ${esc(p.title)}</option>`).join('')}</select></div>
+    <div><label>Длительность, минут</label><input id="aucMin" type="number" value="120" min="10"></div></div>
+    <label>Текст подсказки</label><textarea id="aucTxt" style="min-height:80px"></textarea>
+    <div class="bar"><button id="aucGo">Запустить аукцион</button><span class="ok" id="aucok"></span></div><div id="aucState" class="note"></div></div>`);
+  const aucLoad = async () => { const r = await api('/api/admin/auction'); const a = r.auction; if (!a) return;
+    $('#aucState').innerHTML = `<b>Последний аукцион:</b> замок №${a.puzzle_num}, ${a.settled ? (a.winner_id ? `победил за ${a.price}` : 'без победителя') : 'идёт до ' + new Date(a.ends_at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' })}<br>`
+      + (r.bids.map(b => `${esc(b.nick)} (${esc(b.group_name)}) — <b>${b.amount}</b>`).join('<br>') || 'Ставок пока нет'); };
+  aucLoad().catch(() => {});
+  $('#aucGo').onclick = async () => { if (!confirm('Запустить аукцион? Бот сразу объявит его всем.')) return;
+    try { await api('/api/admin/auction', { num: Number($('#aucNum').value), minutes: Number($('#aucMin').value), text: $('#aucTxt').value }); $('#aucok').textContent = ' Запущен'; aucLoad(); } catch (e) { alert(e.message); } };
   const ph = D.phish || {};
   $('#pane').insertAdjacentHTML('afterbegin', `<div class="card"><b>Учебный фишинг</b>
     <p class="note">Бот пришлёт каждому игроку «щедрое предложение» с личной ссылкой. Кто перейдёт — увидит разбор, как его обманули (данные не вводятся и не собираются). Кто напишет боту «фишинг» или «мошенники», не переходя по ссылке, получит +5 баллов и значок «Бдительный». Окно учений — 48 часов. Запускать один раз, лучше вечером в среду или четверг.</p>

@@ -104,6 +104,45 @@ function meHtml() {
   <p style="margin-top:14px"><button id="cardBtn" class="ghost">📸 Карточка для сторис</button></p>`;
 }
 
+// Четыре засова вокруг сферы: серый — замок закрыт, синий — идёт взлом, зелёный — кто-то уже взломал.
+const LOCK_SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path class="sh" d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+function vaultLocks() { return S ? S.puzzles.filter(p => p.kind === 'lock').slice(0, 4) : []; }
+function vaultOpen() { const l = vaultLocks(); return l.length === 4 && l.every(p => p.open && p.solvers > 0); }
+let seenCracked = (() => { try { return JSON.parse(localStorage.getItem('cracked') || '[]'); } catch { return []; } })();
+function boltsHtml() {
+  const locks = vaultLocks(); if (!locks.length) return '';
+  const fresh = [];
+  const html = locks.map((p, i) => {
+    const cracked = p.open && p.solvers > 0, st = cracked ? 'cracked' : p.open ? 'hacking' : 'shut';
+    if (cracked && !seenCracked.includes(p.num)) fresh.push(p.num);
+    return `<span class="bolt ${st}${fresh.includes(p.num) ? ' just' : ''}" style="--a:${i * 90 - 135}deg" title="Замок №${p.num}: ${cracked ? 'взломан' : p.open ? 'идёт взлом' : 'закрыт'}">${LOCK_SVG}<i>${p.num}</i></span>`;
+  }).join('');
+  if (fresh.length) { seenCracked = seenCracked.concat(fresh); try { localStorage.setItem('cracked', JSON.stringify(seenCracked)); } catch { /* без памяти анимация повторится */ } }
+  return html;
+}
+
+function auctionHtml() {
+  const a = S && S.auction; if (!a) return '';
+  const left = a.ends_at - serverNow();
+  if (a.settled || left <= 0) {
+    if (!a.settled) return `<h2>🔨 Аукцион подсказки</h2><div class="rules"><div class="rule" style="grid-column:1/-1"><b>Торги закрыты</b><span>Хранитель подводит итог…</span></div></div>`;
+    return `<h2>🔨 Аукцион подсказки</h2><div class="rules"><div class="rule" style="grid-column:1/-1">
+      <b>${a.winner ? `Подсказку к замку №${a.num} забрал ${esc(a.winner.nick)} за ${a.price} баллов` : `Подсказку к замку №${a.num} никто не купил`}</b>
+      <span>Ставок: ${a.bids}.${a.won ? ' Это ты!' : ''}</span>${a.won ? `<div class="hint open" style="margin-top:10px">${esc(a.text)}</div>` : ''}</div></div>`;
+  }
+  const solved = S.puzzles.find(p => p.num === a.num && p.solved);
+  return `<h2>🔨 Аукцион подсказки</h2><div class="rules"><div class="rule" style="grid-column:1/-1;border-color:var(--gold)">
+    <b>Хранитель продаёт подсказку к замку №${a.num}${a.title ? ` «${esc(a.title)}»` : ''}</b>
+    <span>Ставки вслепую: никто не видит чужих сумм. Подсказку получит тот, кто предложит больше всех, и заплатит свою ставку. Остальные ничего не теряют. Сколько стоит знание?</span>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 4px" class="mono"><span>⏳ <span data-cds="${a.ends_at}">${fmtShort(left)}</span></span><span>ставок: ${a.bids}</span>${a.my_bid ? `<span class="gold">твоя ставка: ${a.my_bid}</span>` : ''}</div>
+    ${!S.user || !S.user.nick ? '<span class="muted">Войди в игру, чтобы сделать ставку.</span>'
+      : solved ? '<span class="muted">Этот замок ты уже открыл.</span>'
+      : S.deposit && S.deposit.amount ? '<span class="muted">Пока открыт вклад, подсказки недоступны — и на аукционе тоже.</span>'
+      : `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><input id="bidAmt" type="number" min="${a.min}" max="${a.free}" value="${a.my_bid || a.min}" style="width:120px">
+        <button id="bidGo">${a.my_bid ? 'Изменить ставку' : 'Сделать ставку'}</button>${a.my_bid ? '<button id="bidDel" class="ghost">Отозвать</button>' : ''}<span class="muted" style="font-size:14px">свободно ${a.free} · минимум ${a.min}</span></div>`}
+  </div></div>`;
+}
+
 function flashHtml(list) {
   if (!list.length) return '';
   return `<h2>⚡ Молниеносный замок</h2><div class="locks">${list.map(p => p.solved
@@ -229,14 +268,14 @@ function renderHome() {
 
   $('#view').innerHTML = `
     <section class="hero">
-      <div class="orb-wrap" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>
+      <div class="orb-wrap${vaultOpen() ? ' vopen' : ''}" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>${boltsHtml()}
         <svg class="keyhole" viewBox="0 0 54 80"><circle cx="27" cy="22" r="16"/><path d="M27 30 L14 74 L40 74 Z"/></svg></div>
       <h1>Четыре замка.<br><span class="grad">Один приз.</span></h1>
       <p>Приз от банка ВТБ заперт в хранилище. Каждый день открывается новая загадка. Кто решает раньше, получает больше баллов. Нейросеть не поможет: думать придётся самому.</p>
       ${nextHtml}${cta}
       <p style="margin-top:18px;font-size:13px;letter-spacing:.08em">ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</p>
     </section>
-    ${feedbackHtml()}${flashHtml(flash)}${depositHtml()}${meHtml()}${inviteHtml()}
+    ${feedbackHtml()}${flashHtml(flash)}${auctionHtml()}${depositHtml()}${meHtml()}${inviteHtml()}
     <h2>Как это устроено</h2>
     <div class="steps">
       <div class="step"><span class="sn">01</span><b>Войди через ВКонтакте</b><span>Вступи в сообщество и пришли боту код. Это 30 секунд.</span></div>
@@ -273,6 +312,9 @@ function renderHome() {
     if (!confirm(d.interest ? `Закрыть вклад? Проценты (+${d.interest}) станут обычными баллами, а подсказки снова откроются.` : 'Закрыть вклад? Полных суток ещё не прошло, проценты будут 0.')) return;
     try { await api('/api/deposit', { action: 'close' }); await refresh(); go(); } catch (e) { alert(e.message); }
   };
+  const bg = $('#bidGo'); if (bg) bg.onclick = async () => {
+    try { await api('/api/auction/bid', { amount: Number($('#bidAmt').value) }); await refresh(); go(); keeperToast('Ставка принята. Я никому не скажу. — Х.'); } catch (e) { alert(e.message); } };
+  const bd = $('#bidDel'); if (bd) bd.onclick = async () => { try { await api('/api/auction/bid', { amount: 0 }); await refresh(); go(); } catch (e) { alert(e.message); } };
   const cb = $('#cardBtn'); if (cb) cb.onclick = () => makeCard().catch(e => alert('Не получилось: ' + e.message));
   const qb = $('#invQr'); if (qb) qb.onclick = () => showQr().catch(e => alert('Не получилось: ' + e.message));
   const ib = $('#invCopy'); if (ib) ib.onclick = async () => {
@@ -372,9 +414,10 @@ function renderAnswer() {
 
 function renderHints() {
   const el = $('#hints');
-  if (!P.hints.length) { el.innerHTML = ''; el.classList.add('hidden'); return; }
+  const won = P.auction_hint ? `<div class="hint open" style="border-color:var(--gold)"><span class="muted mono" style="font-size:12px">🔨 ПОДСКАЗКА С АУКЦИОНА</span><br>${esc(P.auction_hint)}</div>` : '';
+  if (!P.hints.length) { el.innerHTML = won ? '<b>Подсказки</b>' + won : ''; el.classList.toggle('hidden', !won); return; }
   const firstClosed = P.hints.findIndex(h => !h.open);
-  el.innerHTML = `<b>Подсказки</b>` + P.hints.map((h, i) => h.open
+  el.innerHTML = `<b>Подсказки</b>` + won + P.hints.map((h, i) => h.open
     ? `<div class="hint open"><span class="muted mono" style="font-size:12px">ПОДСКАЗКА ${i + 1} · −${h.cost}</span><br>${esc(h.text)}</div>`
     : `<div class="hint"><span>Подсказка ${i + 1} <span class="muted">· стоит ${h.cost} ${plural(h.cost, 'балл', 'балла', 'баллов')}</span></span>${
         i === firstClosed && !P.solved && !P.over ? `<button class="ghost small" data-hint="${i}">Открыть</button>` : ''}</div>`).join('');
