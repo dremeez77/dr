@@ -398,6 +398,8 @@ function renderAnswer() {
       if (r.correct) {
         P.solved = { points: r.points, place: r.place };
         renderAnswer(); renderHints(); refresh();
+      } else if (r.near) {
+        $('#msg').innerHTML = `<span class="gold">🗝 ${esc(r.near)}</span>`;
       } else {
         P.wrong = r.wrong; P.cooldown_until = r.cooldown_until;
         $('#msg').innerHTML = `<span class="red">Неверно.</span> <span class="muted">Ошибок: ${r.wrong}</span>`;

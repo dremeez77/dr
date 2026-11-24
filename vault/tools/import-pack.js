@@ -43,15 +43,15 @@ for (const p of pack.puzzles || []) {
     console.log(`№${num}: по нему уже отвечали игроки, оставлен как есть`); skipped++; continue;
   }
   if (old) db.prepare('DELETE FROM puzzles WHERE id=?').run(old.id);
-  const kind = ['warmup', 'flash'].includes(p.kind) ? p.kind : 'lock';
+  const kind = ['warmup', 'flash', 'page'].includes(p.kind) ? p.kind : 'lock';
   const max = Number(p.max_points) || 100, min = kind === 'warmup' ? max : Number(p.min_points) || 0;
   const body = String(p.body || '').replace(/\{\{file:([^}]+)\}\}/g, (m, f) => urls[f] || m);
-  db.prepare(`INSERT INTO puzzles(num,kind,title,body,opens_at,max_points,min_points,decay_minutes,answers,hints,published)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+  db.prepare(`INSERT INTO puzzles(num,kind,title,body,opens_at,max_points,min_points,decay_minutes,answers,hints,published,near)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(num, kind, String(p.title), body, opens, max, min, Number(p.decay_minutes) || 720,
-      JSON.stringify(p.answers || []), JSON.stringify(p.hints || []), p.published ? 1 : 0);
+      JSON.stringify(p.answers || []), JSON.stringify(p.hints || []), p.published ? 1 : 0, JSON.stringify(p.near || {}));
   const when = new Date(opens).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  console.log(`№${num} ${kind === 'warmup' ? 'разминка' : kind === 'flash' ? 'молния  ' : 'замок   '} «${p.title}» — ${when} МСК${p.published ? '' : ' (черновик)'}`);
+  console.log(`№${num} ${kind === 'warmup' ? 'разминка' : kind === 'flash' ? 'молния  ' : kind === 'page' ? 'страница' : 'замок   '} «${p.title}» — ${when} МСК${p.published ? '' : ' (черновик)'}`);
   done++;
 }
 db.close();

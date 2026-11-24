@@ -251,7 +251,7 @@ route('GET', /^\/api\/state$/, ctx => {
   const t = now(), u = ctx.user;
   // Черновые замки тоже показываем — как закрытые, с таймером, но без названия. Открыться они не могут,
   // пока организатор не опубликует их (так замок №1 виден до шоу, хотя шифр в него вписывают после).
-  const puzzles = q("SELECT * FROM puzzles WHERE (published=1 OR kind='lock') AND kind<>'secret' ORDER BY num").all()
+  const puzzles = q("SELECT * FROM puzzles WHERE (published=1 OR kind='lock') AND kind NOT IN ('secret','page') ORDER BY num").all()
     .filter(p => p.kind !== 'flash' || (p.opens_at <= t && (t < flashEnd(p) || (u && q('SELECT 1 FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id))))).map(p => {
     const open = p.published === 1 && p.opens_at <= t;
     const mine = u ? q('SELECT points, place FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) : null;
@@ -389,6 +389,10 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
   const last = q('SELECT MAX(created_at) t FROM attempts WHERE user_id=? AND puzzle_id=?').get(u.id, p.id).t || 0;
   if (t - last < ATTEMPT_COOLDOWN_MS) fail(429, 'Не так быстро', { cooldown_until: last + ATTEMPT_COOLDOWN_MS });
   const correct = parse(p.answers, []).some(a => normalize(a) === norm);
+  if (!correct) {
+    const near = Object.entries(parse(p.near, {})).find(([k]) => normalize(k) === norm);
+    if (near) return { correct: false, near: near[1], wrong: wrongCount(u.id, p.id), cooldown_until: last + ATTEMPT_COOLDOWN_MS };
+  }
   // Всё ниже выполняется синхронно, поэтому два игрока не могут получить одно и то же место.
   q('INSERT INTO attempts(user_id,puzzle_id,answer,correct,created_at) VALUES(?,?,?,?,?)').run(u.id, p.id, raw, correct ? 1 : 0, t);
   if (!correct) return { correct: false, wrong: wrongCount(u.id, p.id), cooldown_until: t + ATTEMPT_COOLDOWN_MS };
@@ -427,6 +431,16 @@ route('POST', /^\/api\/puzzle\/(\d+)\/hint$/, ctx => {
   if (used >= hints.length) fail(404, 'Подсказок больше нет');
   q('INSERT INTO hint_uses(user_id,puzzle_id,idx,created_at) VALUES(?,?,?,?)').run(u.id, p.id, used, now());
   return { idx: used, text: hints[used].text, cost: hints[used].cost };
+});
+
+// --- Скрытые страницы ---
+// Слой цепочки: страница существует, но ссылки на неё нет. Адрес — ответ предыдущего шага (/v/<адрес>).
+// Пока замок-родитель не открылся, страницы «нет» — как и любой несуществующей.
+route('GET', /^\/api\/page\/([^/]{1,60})$/, ctx => {
+  const slug = normalize(decodeURIComponent(ctx.params[0]));
+  const p = q("SELECT * FROM puzzles WHERE kind='page' AND published=1 AND opens_at<=?").all(now()).find(x => normalize(x.title) === slug);
+  if (!p) fail(404, 'Здесь ничего нет');
+  return { body: p.body };
 });
 
 // --- Вклад ---
@@ -764,7 +778,7 @@ route('POST', /^\/api\/admin\/puzzle$/, async ctx => {
   const answers = (b.answers || []).map(a => String(a).trim()).filter(Boolean);
   if (b.published && !answers.length) fail(400, 'Нельзя публиковать замок без ответа');
   const hints = (b.hints || []).filter(h => h && String(h.text || '').trim()).map(h => ({ text: String(h.text).trim(), cost: Math.max(0, Number(h.cost) || 0) }));
-  const kind = ['warmup', 'secret', 'flash'].includes(b.kind) ? b.kind : 'lock';
+  const kind = ['warmup', 'secret', 'flash', 'page'].includes(b.kind) ? b.kind : 'lock';
   const max = Math.max(1, Number(b.max_points) || 100), min = kind !== 'lock' && kind !== 'flash' ? max : Math.min(max, Math.max(0, Number(b.min_points) || 0));
   const vals = [String(b.title).trim(), String(b.body || ''), opens, max, min, Math.max(1, Number(b.decay_minutes) || 720),
     JSON.stringify(answers), JSON.stringify(hints), b.published ? 1 : 0];
@@ -974,7 +988,7 @@ route('GET', /^\/api\/admin\/report$/, ctx => {
     days: Object.values(days).sort((a, b) => a.day < b.day ? -1 : 1),
     sources_visitors: q('SELECT COALESCE(src,\'direct\') src, COUNT(DISTINCT vid) c FROM visits GROUP BY src ORDER BY c DESC').all(),
     sources_players: q(`SELECT COALESCE(src,'direct') src, COUNT(*) c FROM users WHERE ${players} GROUP BY src ORDER BY c DESC`).all(),
-    puzzles: q("SELECT p.num, p.kind, p.title, p.opens_at, (SELECT COUNT(*) FROM solves WHERE puzzle_id=p.id) solvers, (SELECT COUNT(*) FROM attempts WHERE puzzle_id=p.id) tries, (SELECT COUNT(DISTINCT user_id) FROM attempts WHERE puzzle_id=p.id) triers FROM puzzles p WHERE p.published=1 AND p.kind<>'secret' ORDER BY p.opens_at").all(),
+    puzzles: q("SELECT p.num, p.kind, p.title, p.opens_at, (SELECT COUNT(*) FROM solves WHERE puzzle_id=p.id) solvers, (SELECT COUNT(*) FROM attempts WHERE puzzle_id=p.id) tries, (SELECT COUNT(DISTINCT user_id) FROM attempts WHERE puzzle_id=p.id) triers FROM puzzles p WHERE p.published=1 AND p.kind NOT IN ('secret','page') ORDER BY p.opens_at").all(),
     feedback: feedbackStats(), phish: phishStats(),
     pages: q('SELECT path, SUM(n) c FROM pageviews GROUP BY path ORDER BY c DESC LIMIT 10').all(),
   };
@@ -995,7 +1009,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
   '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html', '/stage/vault': 'stage-vault.html' };
-const pageFor = p => PAGES[p] || (/^\/bonus\/\d+-[a-f0-9]{12}$/.test(p) ? 'bonus.html' : null);
+const pageFor = p => PAGES[p] || (/^\/bonus\/\d+-[a-f0-9]{12}$/.test(p) ? 'bonus.html' : /^\/v\/[^/]{1,60}$/.test(p) ? 'hidden.html' : null);
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));
