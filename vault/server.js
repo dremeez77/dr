@@ -200,8 +200,8 @@ function badgesMap() {
   const lockTotal = q("SELECT COUNT(*) c FROM puzzles WHERE published=1 AND kind='lock'").get().c;
   const locks = new Map(), warms = new Map(), hinted = new Set();
   for (const h of q('SELECT DISTINCT user_id, puzzle_id FROM hint_uses').all()) hinted.add(h.user_id + ':' + h.puzzle_id);
-  for (const r of q('SELECT s.user_id, s.puzzle_id, s.place, s.solved_at, p.kind, p.opens_at FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
-    if (r.kind === 'secret') add(r.user_id, 'curious');
+  for (const r of q('SELECT s.user_id, s.puzzle_id, s.place, s.solved_at, p.kind, p.num, p.opens_at FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
+    if (r.kind === 'secret') { if (r.num === SECRET_NUM) add(r.user_id, 'curious'); }
     else if (r.kind === 'warmup') warms.set(r.user_id, (warms.get(r.user_id) || 0) + 1);
     else {
       const l = locks.get(r.user_id) || { n: 0, clean: 0 }; l.n++; if (!hinted.has(r.user_id + ':' + r.puzzle_id)) l.clean++; locks.set(r.user_id, l);
@@ -278,7 +278,7 @@ route('GET', /^\/api\/leaderboard$/, () => {
   const rows = all.filter(r => !r.is_staff), staffRows = all.filter(r => r.is_staff);
   const per = {}, warm = {}, secret = {}, bm = badgesMap();
   for (const r of q('SELECT s.user_id, p.num, p.kind, s.points, s.place FROM solves s JOIN puzzles p ON p.id=s.puzzle_id').all()) {
-    if (r.kind === 'secret') secret[r.user_id] = true;
+    if (r.kind === 'secret') { if (r.num === SECRET_NUM) secret[r.user_id] = true; }
     else if (r.kind === 'warmup') warm[r.user_id] = (warm[r.user_id] || 0) + r.points;
     else (per[r.user_id] = per[r.user_id] || {})[r.num] = { points: r.points, place: r.place };
   }
@@ -397,6 +397,9 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
   // Всё ниже выполняется синхронно, поэтому два игрока не могут получить одно и то же место.
   q('INSERT INTO attempts(user_id,puzzle_id,answer,correct,created_at) VALUES(?,?,?,?,?)').run(u.id, p.id, raw, correct ? 1 : 0, t);
   if (!correct) return { correct: false, wrong: wrongCount(u.id, p.id), cooldown_until: t + ATTEMPT_COOLDOWN_MS };
+  // Пасхалка с лимитом: после N решивших ответ больше не принимается (попытка уже записана, но без штрафа — это верный ответ).
+  if (p.max_solvers > 0 && q('SELECT COUNT(*) c FROM solves WHERE puzzle_id=?').get(p.id).c >= p.max_solvers)
+    fail(409, `Опоздал. ${p.max_solvers} человек уже прошли этой дверью. — Х.`);
   // Места студентов и преподавателей считаются отдельно: преподаватель не забирает бонус у студента.
   const place = q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0 AND u.is_staff=?').get(p.id, u.is_staff).c + 1;
   const hints = parse(p.hints, []);
@@ -406,7 +409,10 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
     : finalPoints({ timePts: timeValue(p, t - p.opens_at), place, wrong: wrongCount(u.id, p.id), hintCost });
   q('INSERT INTO solves(user_id,puzzle_id,solved_at,points,place) VALUES(?,?,?,?,?)').run(u.id, p.id, t, points, place);
   creditReferral(u);
-  if (p.kind === 'secret') {
+  if (p.kind === 'secret' && p.num !== SECRET_NUM) {
+    const left = p.max_solvers > 0 ? p.max_solvers - place : 0;
+    if (p.max_solvers > 0) keeper(left > 0 ? `${u.nick} нашёл запасной ключ. Осталось мест: ${left}.` : `Последний запасной ключ забрал ${u.nick}. Дверь закрыта.`);
+  } else if (p.kind === 'secret') {
     keeper(`Кто-то нашёл то, что я не показывал. ${u.nick} теперь «Любопытный». Остальные даже не знают, о чём я.`);
   } else if (p.kind !== 'warmup' && u.is_staff) {
     const students = q('SELECT COUNT(*) c FROM solves s JOIN users u ON u.id=s.user_id WHERE s.puzzle_id=? AND u.banned=0 AND u.is_staff=0').get(p.id).c;

@@ -84,6 +84,8 @@ function openDb(dataDir) {
     try { db.exec('ALTER TABLE users ADD COLUMN ' + col); } catch { /* колонка уже есть */ }
   // «Почти верные» ответы: правильный промежуточный шаг. Хранитель отвечает подсказкой, штрафа нет.
   try { db.exec("ALTER TABLE puzzles ADD COLUMN near TEXT NOT NULL DEFAULT '{}'"); } catch { /* колонка уже есть */ }
+  // Лимит решивших: пасхалка «первые пятеро». 0 — без лимита.
+  try { db.exec('ALTER TABLE puzzles ADD COLUMN max_solvers INTEGER NOT NULL DEFAULT 0'); } catch { /* колонка уже есть */ }
   db.exec(`
     CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, vid TEXT NOT NULL, src TEXT, first INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
     CREATE TABLE IF NOT EXISTS feedback (vid TEXT PRIMARY KEY, user_id INTEGER, rating INTEGER, learned TEXT, useful TEXT, again TEXT, text TEXT, created_at INTEGER NOT NULL);

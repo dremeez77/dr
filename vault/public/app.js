@@ -391,7 +391,7 @@ async function renderLock(num) {
   v.innerHTML = `
     <a class="back" href="#/">← Ко всем замкам</a>
     <div class="puzzle">
-      <span class="mono muted" style="font-size:12px;letter-spacing:.18em">${P.kind === 'warmup' ? 'РАЗМИНКА ДНЯ' : P.kind === 'flash' ? '⚡ МОЛНИЕНОСНЫЙ ЗАМОК' : 'ЗАМОК №' + P.num}</span>
+      <span class="mono muted" style="font-size:12px;letter-spacing:.18em">${P.kind === 'warmup' ? 'РАЗМИНКА ДНЯ' : P.kind === 'flash' ? '⚡ МОЛНИЕНОСНЫЙ ЗАМОК' : P.kind === 'secret' ? '🗝 ТАЙНАЯ ДВЕРЬ' : 'ЗАМОК №' + P.num}</span>
       <h1>${esc(P.title)}</h1>
       <div class="meta" id="meta"></div>
       <div class="body" id="body"></div>
@@ -406,7 +406,7 @@ function renderAnswer() {
   const box = $('#answerBox');
   if (P.solved) {
     box.innerHTML = `<div class="solved-box"><b class="green">Замок открыт. +${P.solved.points} ${plural(P.solved.points, 'балл', 'балла', 'баллов')}</b><br>
-      <span class="muted">${P.kind === 'warmup' ? 'Разминка засчитана.' : `Ты решил ${P.solved.place}-м. Ответ никому не рассказывай: приз один.`}</span></div>`;
+      <span class="muted">${P.kind === 'warmup' ? 'Разминка засчитана.' : P.kind === 'secret' ? 'Ты успел. Никому не рассказывай, где эта дверь.' : `Ты решил ${P.solved.place}-м. Ответ никому не рассказывай: приз один.`}</span></div>`;
     return;
   }
   if (P.over) { box.innerHTML = `<div class="msg muted">Игра завершена, ответы больше не принимаются.</div>`; return; }
@@ -549,6 +549,7 @@ function tick() {
     const wait = Math.ceil((P.cooldown_until - serverNow()) / 1000);
     $('#meta').innerHTML = P.solved ? `<span class="pill green">Решено</span>` :
       P.kind === 'warmup' ? `<span class="pill gold">${P.max_points} баллов за верный ответ</span><span class="pill">Скорость не важна</span>` :
+      P.kind === 'secret' ? `<span class="pill gold">${P.max_points} баллов</span><span class="pill">Только первым пятерым</span>` :
       `<span class="pill gold">Сейчас стоит ${valueNow(P)} ${plural(valueNow(P), 'балл', 'балла', 'баллов')}</span><span class="pill">Ошибок: ${P.wrong}</span>${P.closes_at ? (P.closes_at > serverNow() ? `<span class="pill red">Исчезнет через ${fmtShort(P.closes_at - serverNow())}</span>` : '<span class="pill red">Замок закрылся</span>') : ''}`;
     const btn = $('#send');
     if (btn) { btn.disabled = wait > 0; btn.textContent = wait > 0 ? `Подожди ${wait} с` : 'Проверить'; }
