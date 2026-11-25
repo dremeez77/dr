@@ -251,6 +251,20 @@ function paneSet() {
   if (D.auction_price) $('#gk').value = D.auction_price; // цена, которую техник ввёл на слайде аукциона
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
+  const flashes = D.puzzles.filter(p => p.kind === 'flash' && !(p.published && p.opens_at <= Date.now()));
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="goalCard"><b>🌙 Общая цель: «приведите друзей — открою ночной замок»</b>
+    <p class="note">Задай, сколько игроков должно стать к нужному времени. Дальше сервер всё сделает сам: за 1,5 часа до итога Хранитель пришлёт промежуточный счёт, в назначенное время посчитает игроков и либо запустит молниеносный замок, либо напишет «Не справились». Если не хватило совсем немного — откроет со словами «Почти. Сегодня я щедрый».</p>
+    <div class="grid"><div><label>Нужно игроков</label><input id="gT" type="number"></div>
+    <div><label>Итог в</label><input id="gAt" type="datetime-local"></div>
+    <div><label>Какой замок открыть</label><select id="gNum">${flashes.map(p => `<option value="${p.num}">№${p.num} ${esc(p.title)}</option>`).join('')}</select></div></div>
+    <label class="chk"><input type="checkbox" id="gAnn" checked> Хранитель сразу объявит цель всем игрокам</label>
+    <div class="bar"><button id="gGo">Запустить цель</button><button class="ghost" id="gCancel">Отменить</button><span class="ok" id="gok"></span></div><div class="note" id="gState"></div></div>`);
+  (async () => { try { const r = await api('/api/admin/goal'); $('#gT').value = r.players + 30;
+    const d = new Date(); d.setHours(23, 0, 0, 0); $('#gAt').value = toLocal(d.getTime());
+    const g = r.goal; $('#gState').innerHTML = `Сейчас игроков: <b>${r.players}</b>` + (g ? (g.done ? ` · последняя цель завершена: ${g.result} из ${g.target}` : ` · идёт цель: ${g.target} к ${new Date(g.at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' })}, замок №${g.num}`) : ''); } catch {} })();
+  $('#gGo').onclick = async () => { if (!confirm('Запустить цель?' + ($('#gAnn').checked ? ' Хранитель сразу напишет всем.' : ''))) return;
+    try { const r = await api('/api/admin/goal', { target: Number($('#gT').value), at: fromLocal($('#gAt').value), num: Number($('#gNum').value), announce: $('#gAnn').checked }); $('#gok').textContent = ' Запущено. Было игроков: ' + r.start; } catch (e) { alert(e.message); } };
+  $('#gCancel').onclick = async () => { if (confirm('Отменить цель?')) { await api('/api/admin/goal', { cancel: true }); $('#gok').textContent = ' Отменено'; } };
   const locksPub = D.puzzles.filter(p => p.published && p.kind === 'lock');
   $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="aucCard"><b>🔨 Аукцион подсказки</b>
     <p class="note">Хранитель продаёт одну сильную подсказку к замку. Игроки ставят баллы вслепую, получает самая высокая ставка и платит её. Бот объявит старт и итог сам, победителю пришлёт подсказку в личку. Подсказка должна быть сильнее обычной платной — иначе за неё не будут бороться.</p>

@@ -890,10 +890,51 @@ route('POST', /^\/api\/admin\/puzzle\/(\d+)\/launch$/, ctx => {
   if (!p || p.kind !== 'flash') fail(404, 'Молниеносный замок не найден');
   if (!parse(p.answers, []).length) fail(400, 'У замка нет ответа');
   if (p.published && p.opens_at <= now()) fail(409, 'Этот замок уже запускали');
-  q('UPDATE puzzles SET opens_at=?, published=1, notified_open=0, notified_soon=1 WHERE id=?').run(now(), p.id);
-  notifyTick();
+  launchFlash(p);
   return { ok: true, closes_at: now() + p.decay_minutes * 60000 };
 });
+function launchFlash(p) {
+  q('UPDATE puzzles SET opens_at=?, published=1, notified_open=0, notified_soon=1 WHERE id=?').run(now(), p.id);
+  notifyTick();
+}
+
+// --- Общая цель: «если к 23:00 игроков станет N — открою ночной замок» ---
+// Организатор задаёт цель в админке, дальше сервер всё делает сам: промежуточный счёт и итог.
+const playersCount = () => q('SELECT COUNT(*) c FROM users WHERE nick IS NOT NULL AND banned=0').get().c;
+function goalTick() {
+  const g = parse(kvGet('goal'), null); if (!g || g.done) return;
+  const t = now(), n = playersCount();
+  if (!g.reminded && g.remind_at && t >= g.remind_at && t < g.at) {
+    g.reminded = true; kvSet('goal', JSON.stringify(g));
+    keeper(n >= g.target ? `${n} из ${g.target}. Дверь уже скрипит. Не останавливайтесь.\n— Х.` : `${n} из ${g.target}.\nДверь слышит шаги. Пока недостаточно.\n— Х.`);
+  }
+  if (t < g.at) return;
+  g.done = true; g.result = n; kvSet('goal', JSON.stringify(g));
+  const p = q("SELECT * FROM puzzles WHERE num=? AND kind='flash'").get(g.num);
+  // «Почти» тоже засчитываем: если не хватило совсем немного, Хранитель «щедр».
+  const near = n >= g.target - Math.max(2, Math.round((g.target - (g.start || 0)) * 0.15));
+  if (p && !(p.published && p.opens_at <= t) && (n >= g.target || near)) {
+    keeper(n >= g.target ? `Вас ${n}. Я держу слово.\nНочная дверь открыта. Двадцать минут.\n— Х.` : `${n} из ${g.target}. Почти. Сегодня я щедрый.\nНочная дверь открыта. Двадцать минут.\n— Х.`);
+    launchFlash(p);
+  } else keeper(`${n} из ${g.target}.\nДверь осталась запертой. Я так и думал.\nПопробуйте быть интереснее завтра.\n— Х.`);
+}
+route('POST', /^\/api\/admin\/goal$/, async ctx => {
+  requireAdmin(ctx);
+  const b = await ctx.body();
+  if (b.cancel) { kvSet('goal', ''); return { ok: true }; }
+  const target = Math.floor(Number(b.target)), at = Number(b.at), num = Number(b.num);
+  if (!(target > 0)) fail(400, 'Укажи, сколько игроков нужно');
+  if (!(at > now())) fail(400, 'Время итога должно быть в будущем');
+  if (!q("SELECT 1 FROM puzzles WHERE num=? AND kind='flash'").get(num)) fail(400, 'Нет такого молниеносного замка');
+  const start = playersCount();
+  kvSet('goal', JSON.stringify({ target, at, num, start, remind_at: at - 90 * 60000, done: false }));
+  if (b.announce) {
+    const hhmm = new Date(at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' });
+    keeper(`Есть дверь, которую я открываю только ночью — и только для тех, кто пришёл не один.\n\nСейчас вас ${start}.\nЕсли к ${hhmm} вас станет ${target}, дверь откроется. На двадцать минут. Потом я передумаю.\n\nКак привести остальных, вы знаете. Ссылка на главной. Каждый, кто войдёт по ней, принесёт по пять баллов вам обоим.\n\nЯ считаю.\n— Х.\n${cfg.baseUrl}`);
+  }
+  return { ok: true, start };
+});
+route('GET', /^\/api\/admin\/goal$/, ctx => { requireAdmin(ctx); return { goal: parse(kvGet('goal'), null), players: playersCount() }; });
 
 route('POST', /^\/api\/admin\/puzzle\/(\d+)\/delete$/, ctx => {
   requireAdmin(ctx);
@@ -1150,6 +1191,7 @@ const server = http.createServer(async (req, res) => {
 function notifyTick() {
   const t = now();
   try { settleAuctions(); } catch (e) { console.error('auction', e.message); }
+  try { goalTick(); } catch (e) { console.error('goal', e.message); }
   const users = () => q("SELECT provider, provider_id FROM users WHERE banned=0 AND provider IN ('tg','vk')").all();
   // Скрытые страницы и пасхалки не объявляются: их нужно найти.
   q("UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE kind IN ('page','secret') AND notified_open=0").run();
