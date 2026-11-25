@@ -161,7 +161,7 @@ function loginAs(res, provider, providerId, name, cookies = {}) {
 const parse = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 function openPuzzle(num) {
   const p = q('SELECT * FROM puzzles WHERE num=? AND published=1').get(Number(num));
-  if (!p || p.opens_at > now()) fail(404, 'Этот замок ещё закрыт');
+  if (!p || p.opens_at > now() || p.kind === 'page') fail(404, 'Этот замок ещё закрыт');
   return p;
 }
 // Молниеносный замок живёт decay_minutes минут после открытия, потом ответы не принимаются.
@@ -1151,7 +1151,9 @@ function notifyTick() {
   const t = now();
   try { settleAuctions(); } catch (e) { console.error('auction', e.message); }
   const users = () => q("SELECT provider, provider_id FROM users WHERE banned=0 AND provider IN ('tg','vk')").all();
-  for (const p of q('SELECT * FROM puzzles WHERE published=1 AND notified_open=0 AND opens_at<=?').all(t)) {
+  // Скрытые страницы и пасхалки не объявляются: их нужно найти.
+  q("UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE kind IN ('page','secret') AND notified_open=0").run();
+  for (const p of q("SELECT * FROM puzzles WHERE published=1 AND notified_open=0 AND opens_at<=? AND kind NOT IN ('page','secret')").all(t)) {
     q('UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE id=?').run(p.id);
     // Если сервер был выключен и замок открылся давно, запоздалое сообщение не шлём.
     if (t - p.opens_at < 30 * 60000) bots.broadcast(users(), p.kind === 'flash'
