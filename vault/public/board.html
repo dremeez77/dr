@@ -32,6 +32,7 @@
   <div id="table"></div>
   <div class="foot"><span id="players"></span><span id="url"></span></div>
 </div>
+<script src="/fx.js"></script>
 <script>
 'use strict';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -50,17 +51,19 @@ async function load() {
     S = s; offset = s.now - Date.now();
     const nums = s.puzzles.filter(p => p.kind !== 'warmup').map(p => p.num);
     // Каждые 20 секунд экран переключается между личным зачётом и зачётом групп.
+    const tbl = document.getElementById('table'), before = FX.capture(tbl);
     const showGroups = b.groups.length > 1 && Math.floor(Date.now() / 20000) % 2 === 1 && mode !== 'players' || mode === 'groups';
     document.getElementById('sub').textContent = showGroups ? 'ЗАЧЁТ ГРУПП · БАЛЛЫ ПЯТИ ЛУЧШИХ' : 'ЛИЧНЫЙ ЗАЧЁТ';
     if (showGroups) {
       document.getElementById('table').innerHTML = `<table class="tbl"><thead><tr><th>#</th><th>Команда</th><th class="r">Игроков</th><th class="r">Баллы</th></tr></thead><tbody>${
-        b.groups.slice(0, rowsMax).map(g => `<tr><td class="rank ${g.rank === 1 ? 'rank-1' : ''}">${g.rank}</td><td>${esc(g.name)}</td><td class="r">${g.players}</td><td class="r ${g.rank === 1 ? 'rank-1' : ''}"><b>${g.total}</b></td></tr>`).join('')}</tbody></table>`;
+        b.groups.slice(0, rowsMax).map(g => `<tr data-k="g${esc(g.name)}" data-rank="${g.rank}"><td class="rank ${g.rank === 1 ? 'rank-1' : ''}">${g.rank}</td><td>${esc(g.name)}</td><td class="r">${g.players}</td><td class="r ${g.rank === 1 ? 'rank-1' : ''}"><b data-count="g${esc(g.name)}" data-v="${g.total}">${g.total}</b></td></tr>`).join('')}</tbody></table>`;
     } else
     document.getElementById('table').innerHTML = b.rows.length
       ? `<table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}<th class="r">Итого</th></tr></thead><tbody>${
-          b.rows.slice(0, rowsMax).map(r => `<tr><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td><td class="nick">${esc(r.nick)} <span class="grp">${esc(r.group)}</span></td>${
-            nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}<td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b>${r.total}</b></td></tr>`).join('')}</tbody></table>`
+          b.rows.slice(0, rowsMax).map(r => `<tr data-k="p${r.id}" data-rank="${r.rank}"><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td><td class="nick">${esc(r.nick)} <span class="grp">${esc(r.group)}</span></td>${
+            nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}<td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b data-count="p${r.id}" data-v="${r.total}">${r.total}</b></td></tr>`).join('')}</tbody></table>`
       : '<div class="empty">Пока ни один замок не открыт. Кто будет первым?</div>';
+    FX.play(tbl, before);
     document.getElementById('players').textContent = 'Участников: ' + b.players;
     document.getElementById('url').textContent = location.host;
   } catch { /* повторим */ }

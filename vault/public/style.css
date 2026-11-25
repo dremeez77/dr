@@ -159,9 +159,9 @@ body.deco::after { content: ""; position: fixed; left: 50%; top: -260px; width: 
 .lock.solved .li { stroke: var(--green); }
 .lock .big { white-space: nowrap; }
 .lock .n { padding-right: 30px; }
-.appear .hero > *, .appear h2, .appear .steps, .appear .locks, .appear .tbl-scroll, .appear .rules { animation: rise .7s ease both; }
+.appear .hero > * { animation: rise .7s ease both; }
 .appear .hero > *:nth-child(2) { animation-delay: .08s; } .appear .hero > *:nth-child(3) { animation-delay: .16s; } .appear .hero > *:nth-child(4) { animation-delay: .24s; }
-.appear .steps { animation-delay: .3s; } .appear .locks { animation-delay: .4s; }
+
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @media (max-width: 520px) { .orb-wrap { width: 150px; height: 150px; } .orbit { width: 220px; height: 60px; margin: -30px 0 0 -110px; } .orbit.o2 { width: 190px; height: 190px; margin: -95px 0 0 -95px; }
   .tile { min-width: 58px; } .tile b { font-size: 24px; } }
@@ -209,3 +209,62 @@ body.glitching .wrap { animation: glitch .12s steps(2) 5; }
   .bolt svg { width: 16px; height: 16px; } .bolt.just { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .bolt { animation: none !important; } }
 .orb-wrap { margin-bottom: 46px; }
+
+/* ================= Анимации ================= */
+#stars { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
+.orb-wrap { perspective: 600px; } .orb { will-change: transform; } .keyhole { transition: none; }
+
+/* Появление при прокрутке */
+.rv { opacity: 0; transform: translateY(22px) scale(.985); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); transition-delay: var(--d, 0ms); }
+.rv.rv-in { opacity: 1; transform: none; }
+
+/* Перекидка цифр таймера */
+.tile { perspective: 300px; overflow: hidden; }
+.tile b.fx-flip { animation: fxFlip .45s cubic-bezier(.3,.7,.3,1); transform-origin: 50% 0; }
+@keyframes fxFlip { 0% { transform: rotateX(-90deg); opacity: .2; filter: blur(1px); } 60% { transform: rotateX(12deg); opacity: 1; } 100% { transform: none; } }
+
+/* Живая рамка открытого замка */
+@property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.lock { position: relative; }
+.lock.open::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--ang), transparent 0 62%, rgba(25,181,254,.15) 70%, #19b5fe 86%, #bfe9ff 90%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: fxSpin 3.2s linear infinite; }
+.lock.open.flash { border-color: var(--red); animation: fxPulse 1.2s ease-in-out infinite; }
+.lock.open.flash::before { background: conic-gradient(from var(--ang), transparent 0 55%, #ff5d5d 82%, #ffd0d0 88%, transparent 95%); animation-duration: 1.6s; }
+@keyframes fxSpin { to { --ang: 360deg; } }
+@keyframes fxPulse { 50% { box-shadow: 0 0 0 1px rgba(255,93,93,.4), 0 0 34px -6px rgba(255,93,93,.7); } }
+
+/* Взрыв при верном ответе */
+.fx-burst { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: radial-gradient(circle at 50% 50%, rgba(25,181,254,.25), rgba(4,11,44,.92) 60%);
+  animation: fxIn .25s ease both; cursor: pointer; transition: opacity .45s; }
+.fx-burst.out { opacity: 0; }
+.fx-burst canvas { position: absolute; inset: 0; }
+.fx-ring { position: absolute; width: 160px; height: 160px; border-radius: 50%; border: 3px solid #3ddc84; box-shadow: 0 0 40px #3ddc84; animation: fxRing 1.1s cubic-bezier(.2,.8,.2,1) both; }
+.fx-key { position: absolute; width: 60px; fill: #fff; filter: drop-shadow(0 0 18px #3ddc84); animation: fxKey 1s cubic-bezier(.3,1.4,.4,1) both; }
+.fx-txt { position: absolute; top: calc(50% + 110px); text-align: center; animation: fxIn .5s .35s ease both; }
+.fx-txt span { display: block; font: 700 14px/1 var(--mono); letter-spacing: .3em; color: #9ff3c6; }
+.fx-txt b { display: block; font: 900 64px/1.1 var(--mono); color: #3ddc84; text-shadow: 0 0 30px rgba(61,220,132,.6); margin-top: 8px; }
+@keyframes fxIn { from { opacity: 0; transform: scale(.96); } }
+@keyframes fxRing { 0% { transform: scale(.2); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(2.4); opacity: 0; } }
+@keyframes fxKey { 0% { transform: scale(.4) rotate(0); opacity: 0; } 40% { opacity: 1; } 70% { transform: scale(1.3) rotate(-90deg); } 100% { transform: scale(1) rotate(-90deg); } }
+
+/* Глитч Хранителя: цветной сдвиг и полосы поверх экрана */
+.fx-glitch { position: fixed; inset: 0; z-index: 40; pointer-events: none; mix-blend-mode: screen;
+  background: repeating-linear-gradient(0deg, rgba(25,181,254,.08) 0 2px, transparent 2px 5px), linear-gradient(90deg, rgba(255,0,80,.12), transparent 30%, transparent 70%, rgba(0,255,220,.12));
+  animation: fxScan .35s steps(3) 2; }
+@keyframes fxScan { 0% { transform: translateY(-8px); } 50% { transform: translateY(6px) skewX(3deg); } 100% { transform: none; } }
+.keeper-toast { animation: fxToast .5s cubic-bezier(.2,1.3,.4,1) backwards; }
+@keyframes fxToast { 0% { opacity: 0; transform: translate(-50%, 20px) scale(.9); filter: blur(4px); } 100% { opacity: 1; transform: translate(-50%, 0); filter: none; } }
+
+/* Таблица: обгон и набегающие числа */
+tr[data-k] { position: relative; }
+tr.fx-up td { animation: fxUp 2.4s ease; }
+@keyframes fxUp { 0%, 30% { background: rgba(61,220,132,.28); } 100% { background: transparent; } }
+.fx-bump { display: inline-block; animation: fxBump .9s ease; }
+@keyframes fxBump { 30% { transform: scale(1.25); color: var(--green); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rv { opacity: 1; transform: none; transition: none; }
+  .lock.open::before, .lock.open.flash, .fx-ring, .fx-key, .keeper-toast, .fx-glitch { animation: none !important; }
+}

@@ -40,9 +40,27 @@ const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11) ? a : (n % 10 >=
 const over = () => S && S.ends_at > 0 && serverNow() >= S.ends_at;
 
 // ---------- Загрузка ----------
+// Хранитель «врывается» на экран, когда в игре что-то происходит: открылся замок, его вскрыли, начался аукцион.
+function keeperEvents(prev, cur) {
+  if (!prev || !cur) return;
+  const msgs = [];
+  for (const p of cur.puzzles) {
+    const o = prev.puzzles.find(x => x.num === p.num);
+    const name = p.kind === 'flash' ? `Молниеносный замок` : p.kind === 'warmup' ? null : `Замок №${p.num}`;
+    if (!name) continue;
+    if (!o) { if (p.open) msgs.push(`${name} открыт. Двадцать минут. Время пошло. — Х.`); continue; }
+    if (!o.open && p.open) msgs.push(`${name} открыт. Я жду. — Х.`);
+    else if (o.open && !o.solvers && p.solvers > 0 && !p.solved) msgs.push(`${name} вскрыт. Кто-то оказался быстрее тебя. — Х.`);
+  }
+  if (cur.auction && !cur.auction.settled && (!prev.auction || prev.auction.id !== cur.auction.id)) msgs.push('Аукцион открыт. Сколько стоит знание? — Х.');
+  msgs.slice(0, 2).forEach((m, i) => setTimeout(() => keeperToast(m, true), i * 3400));
+}
+
 async function refresh() {
   try {
+    const prevS = S;
     S = await api('/api/state');
+    keeperEvents(prevS, S);
     offset = S.now - Date.now();
     board = await api('/api/leaderboard');
   } catch (e) { /* сеть моргнула — попробуем в следующий раз */ }
@@ -67,8 +85,9 @@ function renderHeader() {
   const el = $('#me');
   if (!S) return;
   if (S.user && S.user.nick) {
-    el.innerHTML = `<span class="pill gold">${S.total} ${plural(S.total, 'балл', 'балла', 'баллов')}</span><b>${esc(S.user.nick)}</b><button class="ghost small" id="logout">Выйти</button>`;
+    el.innerHTML = `<span class="pill gold"><span data-count="me" data-v="${S.total}">${S.total}</span> ${plural(S.total, 'балл', 'балла', 'баллов')}</span><b>${esc(S.user.nick)}</b><button class="ghost small" id="logout">Выйти</button>`;
     $('#logout').onclick = async () => { await api('/api/auth/logout', {}); await refresh(); go(); };
+    FX.count(el);
   } else {
     el.innerHTML = `<button class="small" id="login">Войти</button>`;
     $('#login').onclick = openLogin;
@@ -147,7 +166,7 @@ function flashHtml(list) {
   if (!list.length) return '';
   return `<h2>⚡ Молниеносный замок</h2><div class="locks">${list.map(p => p.solved
     ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">МОЛНИЕНОСНЫЙ · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span><span class="big">+${p.solved.points}</span><span class="sub">решили: ${p.solvers}</span></a>`
-    : `<a class="lock open" href="#/lock/${p.num}" style="border-color:var(--red)"><span class="n">МОЛНИЕНОСНЫЙ · ИСЧЕЗНЕТ ЧЕРЕЗ</span><span class="t">${esc(p.title)}</span><span class="big" data-cds="${p.closes_at}">${fmtShort(p.closes_at - serverNow())}</span><span class="sub">сейчас стоит ${valueNow(p)} баллов · решили: ${p.solvers}</span></a>`).join('')}</div>`;
+    : `<a class="lock open flash" href="#/lock/${p.num}"><span class="n">МОЛНИЕНОСНЫЙ · ИСЧЕЗНЕТ ЧЕРЕЗ</span><span class="t">${esc(p.title)}</span><span class="big" data-cds="${p.closes_at}">${fmtShort(p.closes_at - serverNow())}</span><span class="sub">сейчас стоит ${valueNow(p)} баллов · решили: ${p.solvers}</span></a>`).join('')}</div>`;
 }
 
 function depositHtml() {
@@ -266,6 +285,7 @@ function renderHome() {
 
   const cta = S.user && S.user.nick ? '' : `<p style="margin-top:22px"><button id="cta">Вступить в игру</button></p>`;
 
+  const before = FX.capture($('#view'));
   $('#view').innerHTML = `
     <section class="hero">
       <div class="orb-wrap${vaultOpen() ? ' vopen' : ''}" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>${boltsHtml()}
@@ -322,7 +342,9 @@ function renderHome() {
     try { if (navigator.share) await navigator.share({ title: 'Хранилище', text, url }); else { await navigator.clipboard.writeText(text); ib.textContent = 'Скопировано ✓'; } }
     catch { prompt('Скопируй ссылку', url); }
   };
-  $('#view').classList.toggle('appear', firstPaint); firstPaint = false;
+  $('#view').classList.toggle('appear', firstPaint);
+  if (firstPaint) FX.reveal($('#view')); else FX.play($('#view'), before);
+  firstPaint = false;
   tick();
 }
 
@@ -335,10 +357,10 @@ function boardHtml(limit) {
   const mine = board.rows.find(r => r.id === myId);
   if (mine && !rows.includes(mine)) rows = rows.concat(mine);
   return `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Игрок</th>${nums.map(n => `<th class="r">№${n}</th>`).join('')}${hasWarm ? '<th class="r" title="Разминки">Р</th>' : ''}<th class="r">Итого</th></tr></thead><tbody>${
-    rows.map(r => `<tr class="${r.id === myId ? 'me-row' : ''}"><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td>
+    rows.map(r => `<tr data-k="p${r.id}" data-rank="${r.rank}" class="${r.id === myId ? 'me-row' : ''}"><td class="rank ${r.rank === 1 ? 'rank-1' : ''}">${r.rank}</td>
       <td class="nick">${esc(r.nick)} ${badgeIcons(r.badges)} <span class="grp">${esc(r.group)}</span></td>
       ${nums.map(n => `<td class="r">${r.locks[n] ? r.locks[n].points : '<span class="muted">·</span>'}</td>`).join('')}${hasWarm ? `<td class="r">${r.warm || '<span class="muted">·</span>'}</td>` : ''}
-      <td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b>${r.total}</b></td></tr>`).join('')
+      <td class="r ${r.rank === 1 ? 'rank-1' : ''}"><b data-count="p${r.id}" data-v="${r.total}">${r.total}</b></td></tr>`).join('')
   }</tbody></table></div>`;
 }
 
@@ -396,6 +418,7 @@ function renderAnswer() {
     try {
       const r = await api(`/api/puzzle/${P.num}/answer`, { answer: val });
       if (r.correct) {
+        FX.burst(r.points);
         P.solved = { points: r.points, place: r.place };
         renderAnswer(); renderHints(); refresh();
       } else if (r.near) {
@@ -512,7 +535,7 @@ function tick() {
   });
   document.querySelectorAll('[data-tiles]').forEach(el => {
     const ms = Number(el.dataset.tiles) - serverNow(), v = parts(ms);
-    el.querySelectorAll('b').forEach((b, i) => { b.textContent = p2(v[i]); });
+    el.querySelectorAll('b').forEach((b, i) => FX.flip(b, p2(v[i])));
     el.firstElementChild.style.display = v[0] ? '' : 'none'; // без дней — три плитки
     if (ms <= 0) reload = true;
   });
@@ -538,7 +561,8 @@ function tick() {
 console.log('%c ХРАНИЛИЩЕ ', 'background:#19b5fe;color:#04102e;font:800 16px monospace;padding:4px 8px;border-radius:4px');
 console.log('%cТы открыл консоль. Значит, ты из тех, кто смотрит глубже.\nСлово для /keeper: ЛЮБОПЫТСТВО\n— Х.', 'color:#19b5fe;font:600 13px monospace;line-height:1.6');
 function keeperToast(text, glitch) {
-  if (glitch) { document.body.classList.add('glitching'); setTimeout(() => document.body.classList.remove('glitching'), 700); }
+  if (glitch) { document.body.classList.add('glitching'); const g = document.createElement('div'); g.className = 'fx-glitch'; document.body.appendChild(g);
+    setTimeout(() => { document.body.classList.remove('glitching'); g.remove(); }, 750); }
   const t = document.createElement('div'); t.className = 'keeper-toast'; t.textContent = text; document.body.appendChild(t);
   setTimeout(() => t.classList.add('out'), 2600); setTimeout(() => t.remove(), 3200);
 }
