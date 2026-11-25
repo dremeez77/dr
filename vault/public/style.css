@@ -268,3 +268,33 @@ tr.fx-up td { animation: fxUp 2.4s ease; }
   .rv { opacity: 1; transform: none; transition: none; }
   .lock.open::before, .lock.open.flash, .fx-ring, .fx-key, .keeper-toast, .fx-glitch { animation: none !important; }
 }
+
+/* ================= Операция «Осколки» ================= */
+.shards { position: relative; margin: 18px 0 8px; padding: 22px 20px; border-radius: 20px; background: linear-gradient(160deg, rgba(80,6,18,.85), rgba(10,21,67,.9));
+  border: 1.5px solid var(--red); box-shadow: 0 0 0 1px rgba(255,93,93,.15), 0 0 60px -10px rgba(255,93,93,.55); animation: shPulse 2.4s ease-in-out infinite; overflow: hidden; }
+.shards::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255,93,93,.05) 0 2px, transparent 2px 6px); }
+.sh-k { font: 700 12px/1 var(--mono); letter-spacing: .22em; color: #ff9b9b; display: flex; align-items: center; }
+.pulse-dot.red { background: var(--red); box-shadow: 0 0 10px var(--red); }
+.sh-h { font: 800 clamp(22px, 5vw, 32px)/1.15 var(--sans); letter-spacing: -.01em; text-transform: none; color: var(--text); margin: 12px 0 8px; }
+.sh-h span { font-family: var(--mono); color: #ff5d5d; white-space: nowrap; }
+.sh-p { color: #f1c9c9; margin: 0 0 16px; font-size: 15px; line-height: 1.5; }
+.sh-mine { position: relative; text-align: center; padding: 18px 14px; border-radius: 16px; background: #050b26; border: 1px dashed rgba(255,93,93,.6); margin-bottom: 14px; }
+.sh-mine span { display: block; font: 700 11px/1 var(--mono); letter-spacing: .26em; color: var(--muted); }
+.sh-mine b { display: block; font: 700 14px/1 var(--mono); color: #ff9b9b; margin: 8px 0 4px; }
+.sh-word { font: 900 clamp(34px, 9vw, 52px)/1.1 var(--mono); color: #fff; text-shadow: 0 0 24px rgba(255,93,93,.7); margin: 6px 0 12px; animation: shFlick 6s infinite; overflow-wrap: anywhere; }
+.sh-prog { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+.sh-prog b { color: var(--text); }
+.sh-bar { display: flex; gap: 6px; } .sh-bar i { flex: 1; height: 10px; border-radius: 5px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,93,93,.25); }
+.sh-bar i.on { background: linear-gradient(90deg, #ff5d5d, #ffb36b); box-shadow: 0 0 12px rgba(255,93,93,.7); }
+.shards.solved { background: linear-gradient(160deg, rgba(6,60,34,.85), rgba(10,21,67,.9)); border-color: var(--green); box-shadow: 0 0 60px -10px rgba(61,220,132,.55); animation: none; }
+.shards.solved .sh-k { color: #9ff3c6; } .shards.solved::before { display: none; }
+.sh-phrase { font: 800 clamp(22px, 5vw, 30px)/1.25 var(--sans); margin: 12px 0; color: #fff; }
+.shards.failed { background: var(--panel); border-color: var(--line); box-shadow: none; animation: none; } .shards.failed::before { display: none; }
+@keyframes shPulse { 50% { box-shadow: 0 0 0 1px rgba(255,93,93,.3), 0 0 90px -6px rgba(255,93,93,.8); } }
+@keyframes shFlick { 0%, 92%, 100% { opacity: 1; } 93% { opacity: .3; transform: translateX(2px); } 95% { opacity: 1; } 96% { opacity: .5; transform: translateX(-2px); } }
+/* Режим тревоги: сайт краснеет */
+body.alarm #stars { filter: hue-rotate(150deg) saturate(2.2); }
+body.alarm::after { background: radial-gradient(closest-side, rgba(255,60,60,.25), transparent) !important; }
+body.alarm .orb { filter: hue-rotate(150deg) saturate(1.6); }
+body.alarm .logo i { border-color: var(--red); } body.alarm .logo i::after { background: var(--red); }
+@media (prefers-reduced-motion: reduce) { .shards, .sh-word { animation: none !important; } }

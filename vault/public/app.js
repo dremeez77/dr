@@ -162,6 +162,25 @@ function auctionHtml() {
   </div></div>`;
 }
 
+// Операция «Осколки»
+function shardsHtml() {
+  const g = S && S.shards; if (!g || g.state === 'scheduled') return '';
+  const bar = `<div class="sh-bar">${Array.from({ length: g.n }, (_, i) => `<i class="${i < g.best ? 'on' : ''}"></i>`).join('')}</div>`;
+  if (g.state === 'solved') return `<section class="shards solved"><div class="sh-k">ОПЕРАЦИЯ «ОСКОЛКИ» · КЛЮЧ СОБРАН</div>
+    <div class="sh-phrase">«${esc(g.phrase)}»</div><p>Последний осколок вставил <b>${esc(g.solved_by)}</b>. Хранитель сдался. Каждый, кто держал осколок, получил +10 баллов. В пятницу на сцене вы узнаете, кто он.</p></section>`;
+  if (g.state === 'failed') return `<section class="shards failed"><div class="sh-k">ОПЕРАЦИЯ «ОСКОЛКИ» · ПРОВАЛ</div><p>Лучшая попытка — ${g.best} из ${g.n}. Ключ уничтожен. Хранитель остался неразоблачённым.</p></section>`;
+  const me = g.my;
+  return `<section class="shards"><div class="sh-k"><i class="pulse-dot red"></i>ТРЕВОГА · ОПЕРАЦИЯ «ОСКОЛКИ»</div>
+    <h2 class="sh-h">Хранитель уничтожит код от кейса через <span data-cds="${g.ends_at}">${fmtShort(g.ends_at - serverNow())}</span></h2>
+    <p class="sh-p">Ключ разбит на ${g.n} осколков. У каждого игрока — свой. Соберите фразу целиком, и Хранитель сдастся. Одному это не под силу: ищите остальных в комментариях ВК и в чатах групп.</p>
+    ${me ? `<div class="sh-mine"><span>ТВОЙ ОСКОЛОК</span><b>№${me.pos} из ${g.n}</b><div class="sh-word">${esc(me.word)}</div>
+      <button class="ghost small" id="shCopy">Скопировать для комментария</button></div>`
+    : `<div class="sh-mine"><span>ТВОЙ ОСКОЛОК</span><div class="sh-word" style="font-size:20px">Войди в игру, чтобы получить осколок</div>${S.user ? '' : '<button class="small" id="shLogin">Войти</button>'}</div>`}
+    <div class="sh-prog"><span>Лучшая попытка: <b>${g.best} из ${g.n}</b> слов на своих местах · попыток: ${g.tries}</span>${bar}</div>
+    ${me ? `<form id="shForm" class="answer"><input id="shIn" autocomplete="off" placeholder="Вся фраза по порядку"><button>Собрать</button></form><div class="msg" id="shMsg">${g.my_best ? `Твой лучший результат: ${g.my_best} из ${g.n}` : ''}</div>` : ''}
+  </section>`;
+}
+
 function flashHtml(list) {
   if (!list.length) return '';
   return `<h2>⚡ Молниеносный замок</h2><div class="locks">${list.map(p => p.solved
@@ -286,7 +305,8 @@ function renderHome() {
   const cta = S.user && S.user.nick ? '' : `<p style="margin-top:22px"><button id="cta">Вступить в игру</button></p>`;
 
   const before = FX.capture($('#view'));
-  $('#view').innerHTML = `
+  document.body.classList.toggle('alarm', !!(S.shards && S.shards.state === 'active'));
+  $('#view').innerHTML = `${shardsHtml()}
     <section class="hero">
       <div class="orb-wrap${vaultOpen() ? ' vopen' : ''}" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>${boltsHtml()}
         <svg class="keyhole" viewBox="0 0 54 80"><circle cx="27" cy="22" r="16"/><path d="M27 30 L14 74 L40 74 Z"/></svg></div>
@@ -335,6 +355,18 @@ function renderHome() {
   const bg = $('#bidGo'); if (bg) bg.onclick = async () => {
     try { await api('/api/auction/bid', { amount: Number($('#bidAmt').value) }); await refresh(); go(); keeperToast('Ставка принята. Я никому не скажу. — Х.'); } catch (e) { alert(e.message); } };
   const bd = $('#bidDel'); if (bd) bd.onclick = async () => { try { await api('/api/auction/bid', { amount: 0 }); await refresh(); go(); } catch (e) { alert(e.message); } };
+  const shf = $('#shForm'); if (shf) shf.onsubmit = async e => {
+    e.preventDefault(); const v = $('#shIn').value.trim(); if (!v) return;
+    try { const r = await api('/api/shards/try', { phrase: v });
+      if (r.solved) { FX.burst(20); keeperToast('Ключ собран. Я сдаюсь. — Х.', true); await refresh(); return; }
+      $('#shMsg').innerHTML = `<span class="${r.hit >= r.n - 2 ? 'gold' : 'muted'}">На своих местах: <b>${r.hit} из ${r.n}</b>.</span> <span class="muted">Ищите недостающие осколки.</span>`;
+    } catch (err) { $('#shMsg').innerHTML = `<span class="red">${esc(err.message)}</span>`; }
+  };
+  const shc = $('#shCopy'); if (shc) shc.onclick = async () => {
+    const t = `🧩 Осколок №${S.shards.my.pos} из ${S.shards.n}: «${S.shards.my.word}» #ХранилищеОсколки`;
+    try { await navigator.clipboard.writeText(t); shc.textContent = 'Скопировано ✓'; } catch { prompt('Скопируй', t); }
+  };
+  const shl = $('#shLogin'); if (shl) shl.onclick = openLogin;
   const cb = $('#cardBtn'); if (cb) cb.onclick = () => makeCard().catch(e => alert('Не получилось: ' + e.message));
   const qb = $('#invQr'); if (qb) qb.onclick = () => showQr().catch(e => alert('Не получилось: ' + e.message));
   const ib = $('#invCopy'); if (ib) ib.onclick = async () => {

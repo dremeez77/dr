@@ -267,7 +267,7 @@ route('GET', /^\/api\/state$/, ctx => {
   const total = u ? baseTotal(u) + interestOf(u) : 0;
   const deposit = u && u.nick ? { amount: u.deposit, since: u.dep_at, interest: interestOf(u), rate: DEP_RATE, min: DEP_MIN, free: baseTotal(u), next_at: u.deposit ? u.dep_at + (Math.floor((now() - u.dep_at) / DAY) + 1) * DAY : 0 } : null;
   const invite = u && u.nick ? { url: `${cfg.baseUrl}/?r=${u.id}`, friends: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.id).c, pending: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=0').get(u.id).c, per: REF_BONUS, max: REF_MAX } : null;
-  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, deposit, auction: (a => a && (!a.settled || now() - a.ends_at < 12 * 3600000) ? auctionView(a, u) : null)(curAuction()), badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
+  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, deposit, shards: shardsView(u), auction: (a => a && (!a.settled || now() - a.ends_at < 12 * 3600000) ? auctionView(a, u) : null)(curAuction()), badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
     login: { tg: !!(cfg.tgToken && cfg.tgUser), vk: !!(cfg.vkToken && cfg.vkScreen), dev: cfg.devLogin } };
 });
 
@@ -541,6 +541,78 @@ route('GET', /^\/api\/admin\/auction$/, ctx => {
   requireAdmin(ctx);
   const a = curAuction();
   return { auction: a, bids: a ? q('SELECT b.amount, b.created_at, u.nick, u.group_name FROM bids b JOIN users u ON u.id=b.user_id WHERE b.auction_id=? ORDER BY b.amount DESC, b.created_at').all(a.id) : [] };
+});
+
+// --- Операция «Осколки»: общий ключ, который можно собрать только всем вместе ---
+// Секретная фраза задаётся в админке и хранится только в базе. Каждый игрок получает одно слово и его номер.
+// Кто введёт фразу целиком — все игроки получают бонус, Хранитель «сдаётся».
+const SHARD_BONUS = 10, SHARD_SOLVER = 10, SHARD_COOLDOWN = 15000;
+const shardsGet = () => parse(kvGet('shards'), null);
+const shardsSet = g => kvSet('shards', JSON.stringify(g));
+const shardWords = text => String(text || '').split(/\s+/).map(w => normalize(w)).filter(Boolean);
+// Игроки регистрируются по очереди, поэтому сдвиг по id раздаёт осколки поровну по кругу.
+const shardIdx = (g, u) => (u.id + g.seed) % g.words.length;
+function shardsView(u) {
+  const g = shardsGet(); if (!g || !g.words || g.state === 'scheduled' && now() < g.starts_at - 0) return g && g.state === 'scheduled' ? { state: 'scheduled', starts_at: g.starts_at } : null;
+  const out = { state: g.state, n: g.words.length, ends_at: g.ends_at, best: g.best || 0, tries: g.tries || 0 };
+  if (u && u.nick && (g.state === 'active' || g.state === 'solved')) { const i = shardIdx(g, u); out.my = { pos: i + 1, word: g.raw[i] }; out.my_best = (g.mine || {})[u.id] || 0; out.last_try = (g.last || {})[u.id] || 0; }
+  if (g.state === 'solved') Object.assign(out, { phrase: g.raw.join(' '), solved_by: g.solved_by, solved_at: g.solved_at });
+  return out;
+}
+function shardsTick() {
+  const g = shardsGet(); if (!g) return;
+  const t = now();
+  if (g.state === 'scheduled' && t >= g.starts_at) {
+    g.state = 'active'; shardsSet(g);
+    keeper(`Завтра я уничтожу код от кейса.\n\nОстановить меня можно только одним способом. Я разбил ключ на ${g.words.length} осколков и раздал их вам. Каждому — свой. Он уже у тебя на сайте.\n\nСоберите фразу целиком — и я сдамся. Одному это не под силу.\n— Х.\n${cfg.baseUrl}`);
+  } else if (g.state === 'active' && t >= g.ends_at) {
+    g.state = 'failed'; shardsSet(g);
+    keeper(`Время вышло. Лучшее, на что вы оказались способны, — ${g.best} из ${g.words.length}.\nКлюч уничтожен. Вы так и не узнаете, кто я.\n— Х.`);
+  }
+}
+route('POST', /^\/api\/shards\/try$/, async ctx => {
+  const u = requirePlayer(ctx), g = shardsGet();
+  if (!g || g.state !== 'active') fail(409, g && g.state === 'solved' ? 'Ключ уже собран' : 'Сейчас собирать нечего');
+  g.last = g.last || {}; g.mine = g.mine || {};
+  const wait = (g.last[u.id] || 0) + SHARD_COOLDOWN - now();
+  if (wait > 0) fail(429, `Подожди ${Math.ceil(wait / 1000)} с`);
+  const { phrase } = await ctx.body();
+  const w = shardWords(phrase);
+  if (!w.length) fail(400, 'Введи фразу');
+  const hit = g.words.reduce((a, x, i) => a + (w[i] === x ? 1 : 0), 0);
+  g.last[u.id] = now(); g.tries = (g.tries || 0) + 1; g.mine[u.id] = Math.max(g.mine[u.id] || 0, hit);
+  const n = g.words.length, prevBest = g.best || 0;
+  if (hit > prevBest) g.best = hit;
+  if (hit === n && w.length === n) {
+    g.state = 'solved'; g.solved_by = u.nick; g.solved_at = now(); shardsSet(g);
+    q('UPDATE users SET bonus=bonus+? WHERE nick IS NOT NULL AND banned=0').run(SHARD_BONUS);
+    q('UPDATE users SET bonus=bonus+? WHERE id=?').run(SHARD_SOLVER, u.id);
+    keeper(`Ключ собран. Последний осколок вставил ${u.nick}.\n\n«${g.raw.join(' ')}»\n\nЯ сдаюсь. Каждый, кто держал осколок, получает ${SHARD_BONUS} баллов.\nВ пятницу на сцене вы узнаете, кто я.\n— Х.`);
+    return { solved: true, hit, n };
+  }
+  shardsSet(g);
+  // Хранитель нервничает, когда кто-то подбирается близко.
+  if (g.best > prevBest && g.best >= n - 2) keeper(g.best === n - 1 ? `Кто-то собрал ${g.best} из ${n}. Остался один осколок. Мне это не нравится.\n— Х.` : `${g.best} из ${n}. Вы начинаете меня беспокоить.\n— Х.`);
+  return { solved: false, hit, n, best: g.best };
+});
+route('POST', /^\/api\/admin\/shards$/, async ctx => {
+  requireAdmin(ctx);
+  const b = await ctx.body();
+  if (b.cancel) { kvSet('shards', ''); return { ok: true }; }
+  const raw = String(b.phrase || '').trim().split(/\s+/).filter(Boolean);
+  if (raw.length < 3 || raw.length > 12) fail(400, 'Фраза: от 3 до 12 слов');
+  const starts = Number(b.starts_at) || now(), ends = Number(b.ends_at);
+  if (!(ends > starts)) fail(400, 'Конец должен быть позже начала');
+  const g = { raw, words: raw.map(x => normalize(x)), seed: crypto.randomInt(0, 997), starts_at: starts, ends_at: ends, state: 'scheduled', best: 0, tries: 0 };
+  shardsSet(g); shardsTick();
+  return { ok: true, state: shardsGet().state };
+});
+route('GET', /^\/api\/admin\/shards$/, ctx => {
+  requireAdmin(ctx);
+  const g = shardsGet(); if (!g) return { shards: null };
+  const dist = g.words.map(() => 0);
+  for (const r of q('SELECT id FROM users WHERE nick IS NOT NULL AND banned=0').all()) dist[shardIdx(g, r)]++;
+  return { shards: { ...g, last: undefined, mine: undefined }, dist };
 });
 
 // --- Учебный фишинг ---
@@ -1106,6 +1178,7 @@ route('GET', /^\/api\/admin\/report$/, ctx => {
       attempts: one('SELECT COUNT(*) c FROM attempts'),
       solves: one("SELECT COUNT(*) c FROM solves s JOIN puzzles p ON p.id=s.puzzle_id WHERE p.kind='lock'"),
       warmups: one("SELECT COUNT(*) c FROM solves s JOIN puzzles p ON p.id=s.puzzle_id WHERE p.kind='warmup'"),
+      shards_tries: (shardsGet() || {}).tries || 0,
       referrals: one('SELECT COUNT(*) c FROM users WHERE ref_done=1'),
       trap: Number(kvGet('trap_count') || 0),
       quiz: Object.keys(quiz.players).length,
@@ -1192,6 +1265,7 @@ function notifyTick() {
   const t = now();
   try { settleAuctions(); } catch (e) { console.error('auction', e.message); }
   try { goalTick(); } catch (e) { console.error('goal', e.message); }
+  try { shardsTick(); } catch (e) { console.error('shards', e.message); }
   const users = () => q("SELECT provider, provider_id FROM users WHERE banned=0 AND provider IN ('tg','vk')").all();
   // Скрытые страницы и пасхалки не объявляются: их нужно найти.
   q("UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE kind IN ('page','secret') AND notified_open=0").run();
