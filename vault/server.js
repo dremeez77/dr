@@ -927,6 +927,83 @@ route('POST', /^\/api\/deal\/control$/, async ctx => {
   return { phase: deal.phase, idx: deal.idx };
 });
 
+// --- «Своя игра»: табло на экране, телефоны — кнопки «Я знаю!» ---
+// Вопросы лежат в data/sv.json (расшифровывается из packs/sv.enc на сервере), в открытом репозитории их нет.
+let svData = null, svMtime = 0;
+function svQuestions() {
+  const f = path.join(cfg.dataDir, 'sv.json');
+  try { const m = fs.statSync(f).mtimeMs; if (m !== svMtime) { svData = JSON.parse(fs.readFileSync(f, 'utf8')); svMtime = m; } } catch { svData = null; }
+  return svData;
+}
+const svFresh = () => ({ teams: 8, scores: {}, used: {}, cur: null, players: {} });
+let sv = parse(kvGet('sv'), null) || svFresh();
+let svDirty = false;
+setInterval(() => { if (svDirty) { svDirty = false; try { kvSet('sv', JSON.stringify(sv)); } catch { /* база закрыта */ } } }, 800).unref();
+const svTeams = () => Array.from({ length: sv.teams }, (_, i) => i + 1);
+function svCell(t, i) { const d = svQuestions(); return d && d.themes[t] && d.themes[t].q[i]; }
+route('GET', /^\/api\/sv$/, ctx => {
+  let did = ctx.cookies.sid_sv;
+  if (!did) { did = rand(10); setCookie(ctx.res, 'sid_sv', did, 60 * 60 * 12); }
+  const d = svQuestions(), admin = isAdmin(ctx);
+  const out = { loaded: !!d, title: d ? d.title : 'Своя игра', teams: sv.teams, scores: svTeams().map(t => ({ team: t, score: sv.scores[t] || 0, members: Object.values(sv.players).filter(p => p.team === t).length })),
+    used: sv.used, me: sv.players[did] || null, now: now(),
+    board: d ? d.themes.map(th => ({ name: th.name, prices: th.q.map(x => x.price) })) : [] };
+  const c = sv.cur;
+  if (c && d) {
+    const isFinal = c.final, q = isFinal ? d.final : svCell(c.t, c.i);
+    out.cur = { final: !!isFinal, t: c.t, i: c.i, theme: isFinal ? d.final.theme : d.themes[c.t].name, price: isFinal ? null : q.price, phase: c.phase,
+      cat: !!c.cat, catTeam: c.catTeam || null, buzzed: c.buzzed || null, buzzAt: c.buzzAt || 0, excluded: c.excluded || [],
+      q: c.phase === 'cat' ? null : q.q, a: c.phase === 'answer' || admin ? q.a : null };
+  }
+  return out;
+});
+route('POST', /^\/api\/sv\/join$/, async ctx => {
+  rateLimit('svj:' + ctx.ip, 600, 60000);
+  const { team } = await ctx.body();
+  if (!ctx.cookies.sid_sv) fail(400, 'Обнови страницу');
+  if (!svTeams().includes(Number(team))) fail(400, 'Нет такой команды');
+  sv.players[ctx.cookies.sid_sv] = { team: Number(team) }; svDirty = true;
+  return { ok: true };
+});
+route('POST', /^\/api\/sv\/buzz$/, ctx => {
+  const p = sv.players[ctx.cookies.sid_sv]; if (!p) fail(400, 'Сначала выбери команду');
+  const c = sv.cur;
+  if (!c || c.phase !== 'open') return { ok: false, late: true };
+  if ((c.excluded || []).includes(p.team)) return { ok: false, excluded: true };
+  c.phase = 'buzzed'; c.buzzed = p.team; c.buzzAt = now(); svDirty = true;
+  return { ok: true, first: true };
+});
+route('POST', /^\/api\/sv\/control$/, async ctx => {
+  requireAdmin(ctx);
+  const b = await ctx.body(), c = sv.cur, d = svQuestions();
+  const price = () => c && !c.final ? svCell(c.t, c.i).price : 0;
+  const markUsed = () => { if (c && !c.final) sv.used[c.t + ':' + c.i] = true; };
+  switch (b.action) {
+    case 'open': { // выбрать клетку
+      if (!d) fail(400, 'Вопросы не загружены');
+      const t = Number(b.t), i = Number(b.i), q = svCell(t, i); if (!q) fail(400, 'Нет такой клетки');
+      sv.cur = { t, i, phase: q.cat ? 'cat' : 'show', cat: !!q.cat, excluded: [] }; break; }
+    case 'final': if (!d || !d.final) fail(400, 'Нет финального вопроса'); sv.cur = { final: true, phase: 'show', excluded: [] }; break;
+    case 'arm': if (c && c.phase === 'show' && !c.final) c.phase = 'open'; break; // принимаем ответы
+    case 'cat_to': if (c && c.phase === 'cat') { const t = Number(b.team); if (!svTeams().includes(t)) fail(400, 'Нет такой команды'); c.catTeam = t; c.buzzed = t; c.phase = 'buzzed'; c.buzzAt = now(); } break;
+    case 'right': if (c && c.buzzed) { sv.scores[c.buzzed] = (sv.scores[c.buzzed] || 0) + price(); c.right = c.buzzed; c.phase = 'answer'; markUsed(); } break;
+    case 'wrong': if (c && c.buzzed) {
+      sv.scores[c.buzzed] = (sv.scores[c.buzzed] || 0) - price();
+      c.excluded = [...(c.excluded || []), c.buzzed]; c.buzzed = null;
+      // «Кот в мешке» отвечает одна команда; в обычном вопросе право ответа переходит к остальным.
+      if (c.cat || c.excluded.length >= sv.teams) { c.phase = 'answer'; markUsed(); } else c.phase = 'open';
+    } break;
+    case 'reveal': if (c) { c.phase = 'answer'; markUsed(); } break;
+    case 'close': sv.cur = null; break;
+    case 'adjust': { const t = Number(b.team), dlt = Math.round(Number(b.delta) || 0); if (svTeams().includes(t)) sv.scores[t] = (sv.scores[t] || 0) + dlt; break; }
+    case 'teams': { const n = Math.max(2, Math.min(12, Math.floor(Number(b.n) || 8))); sv.teams = n; break; }
+    case 'reset': sv = { ...svFresh(), teams: sv.teams, players: sv.players }; break;
+    default: fail(400, 'Неизвестная команда');
+  }
+  svDirty = true;
+  return { ok: true };
+});
+
 // --- Админка ---
 route('POST', /^\/api\/admin\/login$/, async ctx => {
   rateLimit('adm:' + ctx.ip, 8, 60000);
@@ -1254,7 +1331,7 @@ const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=
   svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   ico: 'image/x-icon', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json' };
 const PAGES = { '/': 'index.html', '/board': 'board.html', '/admin': 'admin.html', '/coffee': 'coffee.html',
-  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html', '/stage/vault': 'stage-vault.html', '/deal': 'deal.html', '/stage/deal': 'stage-deal.html' };
+  '/stage/hack': 'stage-hack.html', '/stage/trap': 'stage-trap.html', '/stage/story': 'stage-story.html', '/vote': 'vote.html', '/stage/final': 'stage-final.html', '/show': 'show.html', '/quiz': 'quiz.html', '/stage/quiz': 'stage-quiz.html', '/keeper': 'keeper.html', '/report': 'report.html', '/feedback': 'feedback.html', '/stage/vault': 'stage-vault.html', '/deal': 'deal.html', '/stage/deal': 'stage-deal.html', '/sv': 'sv.html', '/stage/sv': 'stage-sv.html' };
 const pageFor = p => PAGES[p] || (/^\/bonus\/\d+-[a-f0-9]{12}$/.test(p) ? 'bonus.html' : /^\/v\/[^/]{1,60}$/.test(p) ? 'hidden.html' : null);
 
 function serveFile(res, root, rel) {
