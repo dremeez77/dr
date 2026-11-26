@@ -267,7 +267,7 @@ function paneSet() {
     <p class="note">Секретная фраза делится на слова: каждый игрок видит одно слово и его номер. Кто введёт фразу целиком — всем игрокам +10, собравшему ещё +10, Хранитель «сдаётся». В момент начала бот сам объявит тревогу, сайт покраснеет. Если к концу не соберут — Хранитель объявит провал. Фраза хранится только в базе, в коде её нет.</p>
     <label>Секретная фраза (3–12 слов)</label><input id="shPh" placeholder="Например: Хранитель это каждый кто думает своей головой">
     <div class="grid"><div><label>Начало</label><input id="shSt" type="datetime-local"></div><div><label>Конец</label><input id="shEn" type="datetime-local"></div>
-    <div><label>Осколки только топ-N (0 — всем)</label><input id="shTop" type="number" value="5" min="0" max="20"></div></div>
+    <div><label>Осколки только топ-N (0 — всем)</label><input id="shTop" type="number" value="7" min="0" max="20"></div></div>
     <div class="bar"><button id="shGo">Запустить операцию</button><button class="ghost" id="shOff">Отменить</button><span class="ok" id="shok"></span></div><div class="note" id="shState"></div></div>`);
   (async () => { const d1 = new Date(); d1.setDate(d1.getDate() + (d1.getHours() >= 22 ? 1 : 0)); d1.setHours(22, 0, 0, 0);
     const d2 = new Date(d1); d2.setDate(d2.getDate() + 1); d2.setHours(12, 0, 0, 0);
