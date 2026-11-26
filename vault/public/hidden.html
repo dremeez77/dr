@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>…</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .wrap { max-width: 860px; }
+  #v { margin-top: 40px; }
+  #v img { max-width: 100%; border-radius: 14px; display: block; }
+  #v p { color: var(--muted); }
+  .void { text-align: center; padding: 18vh 0; font: 700 14px var(--mono); letter-spacing: .3em; color: #1d2f73; }
+</style>
+</head>
+<body>
+<div class="wrap"><main id="v"></main></div>
+<script>
+const slug = decodeURIComponent(location.pathname.replace(/^\/v\//, ''));
+fetch('/api/page/' + encodeURIComponent(slug)).then(r => r.ok ? r.json() : Promise.reject())
+  .then(d => { document.getElementById('v').innerHTML = d.body; document.title = '🗝'; })
+  .catch(() => { document.getElementById('v').innerHTML = '<div class="void">ЗДЕСЬ НИЧЕГО НЕТ</div>'; });
+</script>
+</body>
+</html>

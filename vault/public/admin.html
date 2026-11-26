@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Хранилище — админка</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 20px; }
+  .tabs button.on { background: var(--gold); color: #111; border-color: var(--gold); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 12px; }
+  textarea { min-height: 220px; font: 14px/1.5 var(--mono); resize: vertical; }
+  .hrow { display: grid; grid-template-columns: 1fr 90px; gap: 8px; margin-bottom: 8px; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  .note { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+  .ok { color: var(--green); font-size: 14px; }
+  .chk { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--text); font-size: 15px; }
+  .chk input { width: auto; }
+  .preview { margin-top: 12px; padding: 16px; border: 1px dashed var(--line); border-radius: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="logo" href="/"><i></i>ХРАНИЛИЩЕ · АДМИН</a></header>
+  <main id="view"></main>
+</div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let D = null, tab = 'puzzles', editing = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || 'Ошибка'); e.status = r.status; throw e; }
+  return j;
+}
+// Время в полях вводится по часам этого компьютера.
+const toLocal = ts => { if (!ts) return ''; const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+const fromLocal = v => v ? new Date(v).getTime() : 0;
+const when = ts => ts ? new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+
+async function load() {
+  try { D = await api('/api/admin/overview'); render(); }
+  catch (e) { if (e.status === 401) loginForm(); else $('#view').innerHTML = `<div class="card"><p class="err">${esc(e.message)}</p></div>`; }
+}
+
+function loginForm() {
+  $('#view').innerHTML = `<div class="card" style="max-width:380px"><form id="f"><label for="pw">Пароль администратора</label><input id="pw" type="password" autocomplete="current-password"><div class="err" id="e"></div><button>Войти</button></form></div>`;
+  $('#f').onsubmit = async ev => { ev.preventDefault(); try { await api('/api/admin/login', { password: $('#pw').value }); load(); } catch (e) { $('#e').textContent = e.message; } };
+}
+
+function render() {
+  const tabs = [['puzzles', 'Замки'], ['users', `Участники (${D.users.length})`], ['attempts', 'Попытки'], ['send', 'Рассылка'], ['settings', 'Настройки и сцена']];
+  $('#view').innerHTML = `<div class="tabs">${tabs.map(([k, t]) => `<button class="ghost small ${tab === k ? 'on' : ''}" data-tab="${k}">${t}</button>`).join('')}</div><div id="pane"></div>`;
+  document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; editing = null; render(); });
+  ({ puzzles: paneP, users: paneU, attempts: paneA, send: paneS, settings: paneSet })[tab]();
+}
+
+// ---------- Замки ----------
+function paneP() {
+  if (editing) return editP(editing);
+  $('#pane').innerHTML = `
+    <div class="tbl-scroll"><table class="tbl"><thead><tr><th>№</th><th>Название</th><th>Открытие</th><th>Баллы</th><th>Статус</th><th class="r">Решили</th><th class="r">Попыток</th><th></th></tr></thead><tbody>
+    ${D.puzzles.map(p => `<tr><td class="rank">${p.num}</td><td>${esc(p.title)}${p.kind === 'warmup' ? ' <span class="muted">· разминка</span>' : p.kind === 'secret' ? ' <span class="muted">· пасхалка, на сайте не видна</span>' : p.kind === 'page' ? ` <span class="muted">· скрытая страница /v/${esc(p.title)}</span>` : p.kind === 'flash' ? ` <span class="muted">· ⚡ молниеносный, живёт ${p.decay_minutes} мин</span>${p.published && p.opens_at <= Date.now() ? '' : ` <button class="small" data-launch="${p.num}">⚡ Запустить сейчас</button>`}` : ''}</td><td>${p.kind === 'flash' && !(p.published && p.opens_at <= Date.now()) ? '<span class="muted">по кнопке</span>' : when(p.opens_at)}</td>
+      <td class="mono">${p.max_points}→${p.min_points} за ${p.decay_minutes} мин</td>
+      <td>${!p.published ? '<span class="muted">черновик</span>' : p.opens_at <= D.now ? '<span class="green">открыт</span>' : '<span class="gold">ждёт</span>'}</td>
+      <td class="r">${p.solvers}</td><td class="r">${p.tries}</td><td><button class="ghost small" data-edit="${p.num}">Изменить</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Замков пока нет</td></tr>'}
+    </tbody></table></div>
+    <div class="bar"><button id="add">Добавить замок</button><input type="file" id="pack" accept=".json" style="max-width:280px"><button class="ghost" id="imp">Импортировать набор</button><span class="ok" id="impmsg"></span></div>
+    <p class="note">Разминка — простой вопрос с фиксированной ценой («Баллов в начале»): без бонусов за скорость и штрафов. Разминкам удобно давать номера с 11.</p>
+    <p class="note">Игроки видят только опубликованные замки. До времени открытия им видны номер и таймер, но не название и не текст.</p>`;
+  document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editing = D.puzzles.find(p => p.num === Number(b.dataset.edit)); paneP(); });
+  document.querySelectorAll('[data-launch]').forEach(b => b.onclick = async () => {
+    const p = D.puzzles.find(x => x.num === Number(b.dataset.launch));
+    if (!confirm(`Запустить молниеносный замок №${p.num} «${p.title}» прямо сейчас? Бот сразу напишет всем, замок проживёт ${p.decay_minutes} мин.`)) return;
+    try { await api(`/api/admin/puzzle/${p.num}/launch`, {}); alert('Запущен! Бот рассылает оповещение.'); load(); } catch (e) { alert(e.message); }
+  });
+  $('#imp').onclick = async () => {
+    const f = $('#pack').files[0]; if (!f) { $('#impmsg').textContent = 'Сначала выбери файл набора (.json)'; return; }
+    $('#impmsg').textContent = 'Загружаю…';
+    try { const r = await api('/api/admin/import', JSON.parse(await f.text())); alert(`Импортировано загадок: ${r.imported}, файлов: ${r.files}`); load(); }
+    catch (e) { $('#impmsg').textContent = e.message; }
+  };
+  $('#add').onclick = () => { const n = Math.max(0, ...D.puzzles.map(p => p.num)) + 1; editing = { num: n, title: '', body: '', opens_at: 0, max_points: 100, min_points: 30, decay_minutes: 720, answers: [], hints: [], published: 0, isNew: true }; paneP(); };
+}
+
+function editP(p) {
+  $('#pane').innerHTML = `<div class="card">
+    <div class="grid">
+      <div><label>Номер</label><input id="num" type="number" min="1" value="${p.num}" ${p.isNew ? '' : 'disabled'}></div>
+      <div><label>Тип</label><select id="kind"><option value="lock">Замок</option><option value="warmup" ${p.kind === 'warmup' ? 'selected' : ''}>Разминка</option><option value="secret" ${p.kind === 'secret' ? 'selected' : ''}>Секрет (пасхалка)</option><option value="flash" ${p.kind === 'flash' ? 'selected' : ''}>⚡ Молниеносный</option></select></div>
+      <div style="grid-column: span 2"><label>Название (видно после открытия)</label><input id="title" value="${esc(p.title)}"></div>
+      <div><label>Открывается</label><input id="opens" type="datetime-local" value="${toLocal(p.opens_at)}"></div>
+    </div>
+    <div class="grid">
+      <div><label>Баллов в начале</label><input id="max" type="number" value="${p.max_points}"></div>
+      <div><label>Баллов в конце</label><input id="min" type="number" value="${p.min_points}"></div>
+      <div><label>За сколько минут цена падает до минимума</label><input id="decay" type="number" value="${p.decay_minutes}"></div>
+    </div>
+    <label>Текст загадки (HTML: &lt;p&gt;, &lt;b&gt;, &lt;pre&gt;, &lt;img&gt;, &lt;blockquote&gt;)</label>
+    <textarea id="body">${esc(p.body)}</textarea>
+    <div class="bar"><input type="file" id="file" style="max-width:300px"><button class="ghost small" id="up">Загрузить и вставить</button><button class="ghost small" id="prev">Предпросмотр</button><span class="ok" id="upmsg"></span></div>
+    <div class="preview body hidden" id="preview"></div>
+    <label>Правильные ответы — по одному в строке. Регистр, пробелы, знаки и ё/е не важны</label>
+    <textarea id="answers" style="min-height:80px">${esc(p.answers.join('\n'))}</textarea>
+    <label>Подсказки: текст и цена в баллах. Открываются по порядку</label>
+    <div id="hintsBox"></div><button class="ghost small" id="addHint">+ подсказка</button>
+    <label class="chk"><input type="checkbox" id="pub" ${p.published ? 'checked' : ''}> Опубликован (появится у игроков по таймеру)</label>
+    <div class="err" id="perr"></div>
+    <div class="bar"><button id="save">Сохранить</button><button class="ghost" id="cancel">Назад</button>${p.isNew ? '' : '<button class="ghost" id="del" style="margin-left:auto;color:var(--red)">Удалить замок</button>'}</div>
+  </div>`;
+  const hintRow = h => { const d = document.createElement('div'); d.className = 'hrow'; d.innerHTML = `<input placeholder="Текст подсказки" value="${esc(h.text || '')}"><input type="number" placeholder="Цена" value="${h.cost == null ? 15 : h.cost}">`; $('#hintsBox').appendChild(d); };
+  p.hints.forEach(hintRow);
+  $('#addHint').onclick = () => hintRow({});
+  $('#cancel').onclick = () => { editing = null; load(); };
+  $('#prev').onclick = () => { const el = $('#preview'); el.classList.toggle('hidden'); el.innerHTML = $('#body').value; };
+  $('#up').onclick = () => {
+    const f = $('#file').files[0]; if (!f) { $('#upmsg').textContent = 'Сначала выбери файл'; return; }
+    const rd = new FileReader();
+    rd.onload = async () => {
+      try {
+        const r = await api('/api/admin/upload', { name: f.name, data: String(rd.result).split(',')[1] });
+        const tag = /\.(mp3|wav|ogg)$/i.test(r.url) ? `<audio controls src="${r.url}"></audio>` : /\.mp4$/i.test(r.url) ? `<video controls src="${r.url}"></video>` : /\.pdf$/i.test(r.url) ? `<a href="${r.url}" target="_blank">Открыть файл</a>` : `<img src="${r.url}" alt="">`;
+        $('#body').value += `\n<p>${tag}</p>`; $('#upmsg').textContent = 'Вставлено в конец текста';
+      } catch (e) { $('#upmsg').textContent = e.message; }
+    };
+    rd.readAsDataURL(f);
+  };
+  $('#save').onclick = async () => {
+    try {
+      await api('/api/admin/puzzle', {
+        num: Number($('#num').value), kind: $('#kind').value, title: $('#title').value, body: $('#body').value, opens_at: fromLocal($('#opens').value),
+        max_points: Number($('#max').value), min_points: Number($('#min').value), decay_minutes: Number($('#decay').value),
+        answers: $('#answers').value.split('\n'), published: $('#pub').checked,
+        hints: [...document.querySelectorAll('.hrow')].map(r => ({ text: r.children[0].value, cost: Number(r.children[1].value) })),
+      });
+      editing = null; load();
+    } catch (e) { $('#perr').textContent = e.message; }
+  };
+  const del = $('#del');
+  if (del) del.onclick = async () => { if (!confirm(`Удалить замок №${p.num} вместе со всеми попытками и баллами за него? Это нельзя отменить.`)) return; await api(`/api/admin/puzzle/${p.num}/delete`, {}); editing = null; load(); };
+}
+
+// ---------- Участники ----------
+function paneU() {
+  $('#pane').innerHTML = `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Ник</th><th>Группа</th><th>Вход</th><th>Имя в мессенджере</th><th class="r">Друзья</th><th class="r">Баллы</th><th></th></tr></thead><tbody>
+    ${D.users.map(u => `<tr><td>${esc(u.nick || '—')}</td><td>${esc(u.group_name || '')}${u.is_staff ? ' <span class="gold">· преподаватель</span>' : ''}</td><td class="mono">${esc(u.provider)}:${esc(u.provider_id)}</td><td>${esc(u.display_name)}</td><td class="r" title="засчитано / ещё не решили ни одной загадки">${u.refs_done || 0}${u.refs_wait ? ` <span class="muted">+${u.refs_wait}</span>` : ''}</td><td class="r">${u.total}${u.bonus ? ` <span class="muted" title="из них бонусы">(${u.bonus > 0 ? '+' : ''}${u.bonus})</span>` : ''}</td>
+      <td style="white-space:nowrap"><button class="ghost small" data-bonus="${u.id}" data-nick="${esc(u.nick || '')}">± баллы</button> <button class="ghost small" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Вернуть' : 'Заблокировать'}</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Пока никого</td></tr>'}
+    </tbody></table></div><p class="note">«Друзья»: сколько приглашённых засчитано, серым — сколько вошли по ссылке, но ещё не решили ни одной загадки (бонус придёт, когда решат). Если приглашение не засчиталось, начисли баллы вручную кнопкой «± баллы» — игроку придёт сообщение от бота. Заблокированный игрок пропадает из таблицы лидеров.</p>`;
+  document.querySelectorAll('[data-ban]').forEach(b => b.onclick = async () => { await api('/api/admin/ban', { id: Number(b.dataset.ban), banned: b.dataset.v === '1' }); load(); });
+  document.querySelectorAll('[data-bonus]').forEach(b => b.onclick = async () => {
+    const a = prompt(`Сколько баллов начислить игроку ${b.dataset.nick}? (минус — списать)`, '5'); if (!a) return;
+    const reason = prompt('За что? Это увидит игрок в сообщении от бота (можно оставить пустым)', 'приглашённые друзья');
+    try { await api('/api/admin/bonus', { id: Number(b.dataset.bonus), amount: Number(a), reason }); load(); } catch (e) { alert(e.message); } });
+}
+
+// ---------- Попытки ----------
+async function paneA() {
+  $('#pane').innerHTML = '<p class="muted">Загрузка…</p>';
+  const { rows } = await api('/api/admin/attempts');
+  $('#pane').innerHTML = `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Время</th><th>Замок</th><th>Игрок</th><th>Ответ</th><th></th></tr></thead><tbody>
+    ${rows.map(a => `<tr><td class="mono">${when(a.created_at)}</td><td>№${a.num}</td><td>${esc(a.nick)} <span class="grp">${esc(a.group_name)}</span></td><td class="mono">${esc(a.answer)}</td><td>${a.correct ? '<span class="green">верно</span>' : '<span class="red">нет</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Попыток пока нет</td></tr>'}
+    </tbody></table></div><p class="note">Последние 300 попыток. Удобно смотреть, где игроки застревают и не пора ли дать подсказку рассылкой.</p>`;
+}
+
+// ---------- Рассылка ----------
+function paneS() {
+  $('#pane').innerHTML = `<div class="card"><p style="margin-top:0">Сообщение придёт всем участникам в тот мессенджер, через который они вошли. Telegram: ${D.bots.tg ? '<span class="green">подключён</span>' : '<span class="red">не подключён</span>'}, ВКонтакте: ${D.bots.vk ? '<span class="green">подключён</span>' : '<span class="red">не подключён</span>'}.</p>
+    <textarea id="txt" style="min-height:120px;font-family:var(--sans)" placeholder="Текст сообщения"></textarea>
+    <div class="bar"><button id="go">Отправить всем</button><span class="ok" id="res"></span></div>
+    <p class="note">Оповещения «замок откроется через 15 минут» и «замок открыт» уходят автоматически, отдельно их слать не нужно.</p></div>`;
+  $('#go').onclick = async () => {
+    const text = $('#txt').value.trim(); if (!text || !confirm('Отправить это сообщение всем участникам?')) return;
+    try { const r = await api('/api/admin/broadcast', { text }); $('#res').textContent = `Отправляется: ${r.queued} получателей`; } catch (e) { $('#res').textContent = e.message; }
+  };
+}
+
+// ---------- Настройки ----------
+function paneSet() {
+  $('#pane').innerHTML = `
+    <div class="card"><b>Конец игры</b><p class="note">После этого момента ответы не принимаются, а таблица замирает. Пустое поле — без ограничения.</p>
+      <div class="bar"><input id="ends" type="datetime-local" value="${toLocal(D.ends_at)}" style="max-width:260px"><button id="saveEnds">Сохранить</button><span class="ok" id="eok"></span></div></div>
+    <div class="card"><b>Экраны для сцены</b>
+      <p class="note">Открывай на компьютере, подключённом к экрану в зале. Клавиша F — полный экран.</p>
+      <p><a href="/stage/hack" target="_blank">/stage/hack</a> — «взлом» презентации. Пробел запускает помехи и сообщение Хранителя, R — сброс.<br>
+         <a href="/stage/trap" target="_blank">/stage/trap</a> — QR «бесплатный кофе». Пробел показывает счётчик попавшихся, B — назад.<br>
+         <a href="/board" target="_blank">/board</a> — таблица лидеров на большой экран.<br><a href="/report" target="_blank"><b>/report</b></a> — отчёт для ВТБ: посетители, игроки, источники, графики по дням. Кнопка «Сохранить в PDF».</p>
+      <p><a href="/stage/story" target="_blank">/stage/story</a> — история с голосованием зала.<br><a href="/stage/final" target="_blank">/stage/final</a> — суперфинал в пятницу: тройка лидеров, вопрос, таймер.<br><a href="/stage/sv" target="_blank"><b>/stage/sv</b></a> — «Своя игра» на финале: табло, кнопки «Я знаю!» на телефонах (/sv), счёт команд. Ответ видит ведущий на своём телефоне на /sv.<br><a href="/stage/deal" target="_blank"><b>/stage/deal</b></a> — игра «Сделка» в среду: QR, досье на экране, голосование команд с телефонов, счёт (досье и ответы в deal.json).<br><a href="/stage/vault" target="_blank"><b>/stage/vault</b></a> — открытие хранилища на финале: пробел щёлкает замки по одному, потом дверь открывается и появляется победитель.<br><a href="/stage/quiz" target="_blank">/stage/quiz</a> — квиз на телефонах в пятницу (вопросы в quiz.json).</p>
+      <div class="bar"><span>Счётчик ловушки: <b class="mono">${D.trap_count}</b></span><button class="ghost small" id="resetTrap">Обнулить перед выступлением</button></div></div>`;
+  $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Суперфинал</b><p class="note">Вопрос для тройки лидеров и ответ на него — код от замка на кейсе. Видны только на экране /stage/final.</p>
+      <label>Вопрос (HTML)</label><textarea id="fq" style="min-height:110px">${esc(D.final_question)}</textarea>
+      <label>Ответ (код от кейса)</label><input id="fa" value="${esc(D.final_answer)}" style="max-width:260px">
+      <div class="bar"><button id="saveFinal">Сохранить</button><span class="ok" id="fok"></span></div></div>`);
+  $('#saveFinal').onclick = async () => { await api('/api/admin/settings', { final_question: $('#fq').value, final_answer: $('#fa').value }); $('#fok').textContent = 'Сохранено'; };
+  $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Шифратор для замка №1</b><p class="note">Сразу после шоу: вставь исходный текст из документа организатора и цену аукциона. Каждая буква сдвигается вперёд на очередную цифру ключа (алфавит из 33 букв).</p>
+      <label>Исходный текст</label><textarea id="gp" style="min-height:90px;font-family:var(--sans)"></textarea>
+      <label>Ключ — цена аукциона, только цифры</label><input id="gk" inputmode="numeric" style="max-width:200px">
+      <label>Шифр (вставь в текст замка №1 между &lt;pre&gt; и &lt;/pre&gt;)</label><textarea id="gc" readonly style="min-height:90px"></textarea></div>`);
+  $('#pane').insertAdjacentHTML('beforeend', `<div class="card"><b>Презентация открытия</b><p class="note">Открой <a href="/show" target="_blank">/show</a> на ноутбуке у сцены. Здесь — то, что покажется на слайдах.</p>
+      <label>Команда: по одной строке «Имя — роль»</label><textarea id="st" style="min-height:110px;font-family:var(--sans)" placeholder="Даниил Максютов — ведущий">${esc(D.show_team)}</textarea>
+      <label>Представитель ВТБ: имя и должность</label><input id="sv" value="${esc(D.show_vtb)}" placeholder="Иван Иванов, руководитель отделения">
+      <label>Общее фото команды (горизонтальное). Если загружено, слайд покажет его вместо карточек</label>
+      <div class="bar" style="margin-top:0"><div id="grpPrev" style="width:200px;height:112px;border-radius:10px;border:1px solid var(--line);background:#0d1a4a center/cover no-repeat"></div>
+        <input type="file" id="grpFile" accept="image/*" style="max-width:260px"><button class="ghost small" id="grpDel">Убрать общее фото</button></div>
+      <label>Или фото по отдельности (квадратные или портретные, лицо по центру)</label><div id="photos" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px"></div>
+      <div class="bar"><button id="saveShow">Сохранить</button><span class="ok" id="sok"></span>${D.auction_price ? `<span>Цена аукциона с презентации: <b class="mono">${esc(D.auction_price)} ₽</b></span>` : ''}</div></div>`);
+  // Те же правила разбора, что и на слайде: строки или запятые, «Имя — роль».
+  const teamNames = () => $('#st').value.split(/\n|[,;](?=[^—–-]*[—–-])/).map(l => l.trim()).filter(Boolean).map(l => l.split(/\s*[—–-]\s+|\s+[—–-]\s*/)[0].trim());
+  const photos = { ...(D.show_photos || {}) };
+  const drawPhotos = () => {
+    $('#photos').innerHTML = teamNames().map((n, i) => `<div style="border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center">
+      <div style="width:84px;height:84px;border-radius:50%;margin:0 auto 8px;background:#0d1a4a center/cover no-repeat;${photos[n] ? `background-image:url('${esc(photos[n])}')` : ''}"></div>
+      <div style="font-size:13px;margin-bottom:6px">${esc(n)}</div>
+      <input type="file" accept="image/*" data-n="${esc(n)}" style="font-size:12px;padding:6px">
+      ${photos[n] ? `<button class="ghost small" data-del="${esc(n)}" style="margin-top:6px">Убрать фото</button>` : ''}</div>`).join('') || '<span class="note">Сначала впиши команду выше</span>';
+    document.querySelectorAll('#photos [data-n]').forEach(inp => inp.onchange = () => {
+      const f = inp.files[0]; if (!f) return;
+      const rd = new FileReader();
+      rd.onload = async () => {
+        try { const r = await api('/api/admin/upload', { name: f.name.replace(/\.jpeg$/i, '.jpg'), data: String(rd.result).split(',')[1] });
+          photos[inp.dataset.n] = r.url; await api('/api/admin/settings', { show_photos: photos }); drawPhotos(); $('#sok').textContent = 'Фото сохранено'; }
+        catch (e) { $('#sok').textContent = e.message; }
+      };
+      rd.readAsDataURL(f);
+    });
+    document.querySelectorAll('#photos [data-del]').forEach(b => b.onclick = async () => { delete photos[b.dataset.del]; await api('/api/admin/settings', { show_photos: photos }); drawPhotos(); });
+  };
+  drawPhotos(); $('#st').oninput = drawPhotos;
+  let group = D.show_group || '';
+  const drawGroup = () => { $('#grpPrev').style.backgroundImage = group ? `url('${group}')` : 'none'; $('#grpDel').style.display = group ? '' : 'none'; };
+  drawGroup();
+  $('#grpFile').onchange = () => {
+    const f = $('#grpFile').files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = async () => {
+      try { const r = await api('/api/admin/upload', { name: f.name.replace(/\.jpeg$/i, '.jpg'), data: String(rd.result).split(',')[1] });
+        group = r.url; await api('/api/admin/settings', { show_group: group }); drawGroup(); $('#sok').textContent = 'Общее фото сохранено'; }
+      catch (e) { $('#sok').textContent = e.message; }
+    };
+    rd.readAsDataURL(f);
+  };
+  $('#grpDel').onclick = async () => { group = ''; await api('/api/admin/settings', { show_group: '' }); drawGroup(); };
+  $('#saveShow').onclick = async () => { await api('/api/admin/settings', { show_team: $('#st').value, show_vtb: $('#sv').value, show_photos: photos }); $('#sok').textContent = 'Сохранено'; };
+  const ABC = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
+  const enc = () => { const key = $('#gk').value.replace(/\D/g, ''); let i = 0;
+    $('#gc').value = key ? [...$('#gp').value].map(ch => { const k = ABC.indexOf(ch.toLowerCase()); return k < 0 ? ch.toUpperCase() : ABC[(k + Number(key[i++ % key.length])) % 33].toUpperCase(); }).join('') : ''; };
+  $('#gp').oninput = enc; $('#gk').oninput = enc;
+  if (D.auction_price) $('#gk').value = D.auction_price; // цена, которую техник ввёл на слайде аукциона
+  $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
+  $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="hideCard"><b>🔒 Скрыть таблицу перед финалом</b>
+    <p class="note">С указанного времени игроки не видят ни таблицу, ни чужие и свои баллы (на сайте, на /board, в карточках). Хранитель сам объявит это всем. Ты видишь всё в админке, сцена финала работает как обычно. Показать снова — кнопкой ниже.</p>
+    <div class="grid"><div><label>Скрыть с</label><input id="hdAt" type="datetime-local" value="${toLocal(D.hide_at || (() => { const d = new Date(); d.setHours(20, 0, 0, 0); return d.getTime(); })())}"></div></div>
+    <div class="bar"><button id="hdGo">${D.hide_at ? 'Изменить время' : 'Скрыть в это время'}</button><button class="ghost" id="hdOff">Показать таблицу</button><span class="ok" id="hdok">${D.hide_at ? (D.hide_at <= Date.now() ? ' Сейчас таблица СКРЫТА' : ' Скроется ' + new Date(D.hide_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })) : ''}</span></div>
+    <label class="chk"><input type="checkbox" id="certOn" ${D.cert_on ? 'checked' : ''}> 🎓 Показать игрокам кнопку «Мой сертификат» (именной сертификат участника, каждый скачивает сам)</label><span class="ok" id="certok"></span></div>`);
+  $('#hdGo').onclick = async () => { await api('/api/admin/settings', { hide_at: fromLocal($('#hdAt').value) }); $('#hdok').textContent = ' Сохранено'; };
+  $('#hdOff').onclick = async () => { if (confirm('Показать таблицу всем?')) { await api('/api/admin/settings', { hide_at: 0 }); $('#hdok').textContent = ' Таблица снова видна'; } };
+  $('#certOn').onchange = async e => { await api('/api/admin/settings', { cert_on: e.target.checked }); $('#certok').textContent = ' Сохранено'; };
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="shCard" style="border-color:var(--red)"><b>🧩 Операция «Осколки»</b>
+    <p class="note">Секретная фраза делится на слова: каждый игрок видит одно слово и его номер. Кто введёт фразу целиком — всем игрокам +10, собравшему ещё +10, Хранитель «сдаётся». В момент начала бот сам объявит тревогу, сайт покраснеет. Если к концу не соберут — Хранитель объявит провал. Фраза хранится только в базе, в коде её нет.</p>
+    <label>Секретная фраза (3–12 слов)</label><input id="shPh" placeholder="Например: Хранитель это каждый кто думает своей головой">
+    <div class="grid"><div><label>Начало</label><input id="shSt" type="datetime-local"></div><div><label>Конец</label><input id="shEn" type="datetime-local"></div>
+    <div><label>Осколки только топ-N (0 — всем)</label><input id="shTop" type="number" value="7" min="0" max="20"></div></div>
+    <div class="bar"><button id="shGo">Запустить операцию</button><button class="ghost" id="shOff">Отменить</button><span class="ok" id="shok"></span></div><div class="note" id="shState"></div></div>`);
+  (async () => { const d1 = new Date(); d1.setDate(d1.getDate() + (d1.getHours() >= 22 ? 1 : 0)); d1.setHours(22, 0, 0, 0);
+    const d2 = new Date(d1); d2.setDate(d2.getDate() + 1); d2.setHours(12, 0, 0, 0);
+    $('#shSt').value = toLocal(d1.getTime()); $('#shEn').value = toLocal(d2.getTime());
+    try { const r = await api('/api/admin/shards'); const g = r.shards; if (!g) return;
+      const st = { scheduled: 'запланирована', active: 'ИДЁТ', solved: 'КЛЮЧ СОБРАН', failed: 'провалена' }[g.state];
+      $('#shState').innerHTML = `Статус: <b>${st}</b> · фраза: «${esc(g.raw.join(' '))}» · начало ${new Date(g.starts_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} · конец ${new Date(g.ends_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}<br>Лучшая попытка: ${g.best} из ${g.raw.length} · попыток: ${g.tries}${g.solved_by ? ' · собрал: ' + esc(g.solved_by) : ''}<br>${r.holders && r.holders.length ? 'Держатели: ' + r.holders.map(h => `<b>${esc(h.nick)}</b> (${esc(h.group)}): ${esc(h.words.join(', '))}`).join(' · ') : g.k ? `Осколки получат топ-${g.k} в момент начала` : 'Осколков на руках: ' + r.dist.map((n, i) => `№${i + 1} — ${n}`).join(' · ')}`; } catch {} })();
+  $('#shGo').onclick = async () => { if (!confirm('Запустить операцию «Осколки»? Если начало уже наступило — бот сразу объявит тревогу всем.')) return;
+    try { const r = await api('/api/admin/shards', { phrase: $('#shPh').value, starts_at: fromLocal($('#shSt').value), ends_at: fromLocal($('#shEn').value), top: Number($('#shTop').value) }); $('#shok').textContent = r.state === 'active' ? ' Тревога объявлена!' : ' Запланировано'; } catch (e) { alert(e.message); } };
+  $('#shOff').onclick = async () => { if (confirm('Отменить операцию? Прогресс сотрётся.')) { await api('/api/admin/shards', { cancel: true }); $('#shok').textContent = ' Отменено'; } };
+  const flashes = D.puzzles.filter(p => p.kind === 'flash' && !(p.published && p.opens_at <= Date.now()));
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="goalCard"><b>🌙 Общая цель: «приведите друзей — открою ночной замок»</b>
+    <p class="note">Задай, сколько игроков должно стать к нужному времени. Дальше сервер всё сделает сам: за 1,5 часа до итога Хранитель пришлёт промежуточный счёт, в назначенное время посчитает игроков и либо запустит молниеносный замок, либо напишет «Не справились». Если не хватило совсем немного — откроет со словами «Почти. Сегодня я щедрый».</p>
+    <div class="grid"><div><label>Нужно игроков</label><input id="gT" type="number"></div>
+    <div><label>Итог в</label><input id="gAt" type="datetime-local"></div>
+    <div><label>Какой замок открыть</label><select id="gNum">${flashes.map(p => `<option value="${p.num}">№${p.num} ${esc(p.title)}</option>`).join('')}</select></div></div>
+    <label class="chk"><input type="checkbox" id="gAnn" checked> Хранитель сразу объявит цель всем игрокам</label>
+    <div class="bar"><button id="gGo">Запустить цель</button><button class="ghost" id="gCancel">Отменить</button><span class="ok" id="gok"></span></div><div class="note" id="gState"></div></div>`);
+  (async () => { try { const r = await api('/api/admin/goal'); $('#gT').value = r.players + 30;
+    const d = new Date(); d.setHours(23, 0, 0, 0); $('#gAt').value = toLocal(d.getTime());
+    const g = r.goal; $('#gState').innerHTML = `Сейчас игроков: <b>${r.players}</b>` + (g ? (g.done ? ` · последняя цель завершена: ${g.result} из ${g.target}` : ` · идёт цель: ${g.target} к ${new Date(g.at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' })}, замок №${g.num}`) : ''); } catch {} })();
+  $('#gGo').onclick = async () => { if (!confirm('Запустить цель?' + ($('#gAnn').checked ? ' Хранитель сразу напишет всем.' : ''))) return;
+    try { const r = await api('/api/admin/goal', { target: Number($('#gT').value), at: fromLocal($('#gAt').value), num: Number($('#gNum').value), announce: $('#gAnn').checked }); $('#gok').textContent = ' Запущено. Было игроков: ' + r.start; } catch (e) { alert(e.message); } };
+  $('#gCancel').onclick = async () => { if (confirm('Отменить цель?')) { await api('/api/admin/goal', { cancel: true }); $('#gok').textContent = ' Отменено'; } };
+  const locksPub = D.puzzles.filter(p => p.published && p.kind === 'lock');
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="aucCard"><b>🔨 Аукцион подсказки</b>
+    <p class="note">Хранитель продаёт одну сильную подсказку к замку. Игроки ставят баллы вслепую, получает самая высокая ставка и платит её. Бот объявит старт и итог сам, победителю пришлёт подсказку в личку. Подсказка должна быть сильнее обычной платной — иначе за неё не будут бороться.</p>
+    <div class="grid"><div><label>Замок</label><select id="aucNum">${locksPub.map(p => `<option value="${p.num}">№${p.num} ${esc(p.title)}</option>`).join('')}</select></div>
+    <div><label>Длительность, минут</label><input id="aucMin" type="number" value="120" min="10"></div></div>
+    <label>Текст подсказки</label><textarea id="aucTxt" style="min-height:80px"></textarea>
+    <div class="bar"><button id="aucGo">Запустить аукцион</button><span class="ok" id="aucok"></span></div><div id="aucState" class="note"></div></div>`);
+  const aucLoad = async () => { const r = await api('/api/admin/auction'); const a = r.auction; if (!a) return;
+    $('#aucState').innerHTML = `<b>Последний аукцион:</b> замок №${a.puzzle_num}, ${a.settled ? (a.winner_id ? `победил за ${a.price}` : 'без победителя') : 'идёт до ' + new Date(a.ends_at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' })}<br>`
+      + (r.bids.map(b => `${esc(b.nick)} (${esc(b.group_name)}) — <b>${b.amount}</b>`).join('<br>') || 'Ставок пока нет'); };
+  aucLoad().catch(() => {});
+  $('#aucGo').onclick = async () => { if (!confirm('Запустить аукцион? Бот сразу объявит его всем.')) return;
+    try { await api('/api/admin/auction', { num: Number($('#aucNum').value), minutes: Number($('#aucMin').value), text: $('#aucTxt').value }); $('#aucok').textContent = ' Запущен'; aucLoad(); } catch (e) { alert(e.message); } };
+  const ph = D.phish || {};
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card"><b>Учебный фишинг</b>
+    <p class="note">Бот пришлёт каждому игроку «щедрое предложение» с личной ссылкой. Кто перейдёт — увидит разбор, как его обманули (данные не вводятся и не собираются). Кто напишет боту «фишинг» или «мошенники», не переходя по ссылке, получит +5 баллов и значок «Бдительный». Окно учений — 48 часов. Запускать один раз, лучше вечером в среду или четверг.</p>
+    ${ph.at ? `<p>Запущено: ${new Date(ph.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} · отправлено ${ph.sent} · <b class="red">перешли ${ph.clicked}</b> · <b class="green">распознали ${ph.reported}</b></p>` : ''}
+    <label>Текст (ссылка подставится вместо {link})</label><textarea id="phTxt" style="min-height:80px">🎁 Хранитель расщедрился: первые 30 игроков получают +50 баллов! Подтверди участие до 23:59 по ссылке: {link}</textarea>
+    <div class="bar"><button id="phGo" ${ph.at ? 'disabled' : ''}>${ph.at ? 'Учения уже проводились' : 'Запустить учения'}</button><span class="ok" id="phok"></span></div></div>`);
+  $('#phGo').onclick = async () => { if (!confirm('Отправить учебную фишинговую рассылку всем игрокам?')) return;
+    try { const r = await api('/api/admin/phish', { text: $('#phTxt').value }); $('#phok').textContent = ' Отправляется: ' + r.sent; } catch (e) { alert(e.message); } };
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card"><b>Анкета после недели</b>
+    <p class="note">Анкета всегда доступна по ссылке <a href="/feedback" target="_blank">/feedback</a>. Галочка показывает на главной карточку «Оцени неделю». Включи в пятницу после финала и отправь ссылку через «Рассылку». Ответы появятся в <a href="/report" target="_blank">/report</a>.</p>
+    <label class="chk"><input type="checkbox" id="fbOn" ${D.feedback_on ? 'checked' : ''}> Показывать анкету на главной</label><span class="ok" id="fbok"></span></div>`);
+  $('#fbOn').onchange = async e => { await api('/api/admin/settings', { feedback_on: e.target.checked }); $('#fbok').textContent = ' Сохранено'; };
+  // Самое срочное — наверх: скрытие таблицы, осколки, общая цель.
+  ['#goalCard', '#shCard', '#hideCard'].forEach(id => { const e = $(id); if (e) $('#pane').prepend(e); });
+}
+
+load();
+</script>
+</body>
+</html>

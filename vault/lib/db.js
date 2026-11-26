@@ -1,0 +1,100 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+
+function openDb(dataDir) {
+  fs.mkdirSync(path.join(dataDir, 'uploads'), { recursive: true });
+  const db = new DatabaseSync(path.join(dataDir, 'vault.db'));
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY,
+      provider TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      display_name TEXT,
+      nick TEXT,
+      nick_key TEXT,
+      group_name TEXT,
+      banned INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      UNIQUE(provider, provider_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS users_nick_key ON users(nick_key);
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS login_codes (
+      code TEXT PRIMARY KEY,
+      pending TEXT NOT NULL UNIQUE,
+      provider TEXT,
+      provider_id TEXT,
+      display_name TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS puzzles (
+      id INTEGER PRIMARY KEY,
+      num INTEGER NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      opens_at INTEGER NOT NULL,
+      max_points INTEGER NOT NULL DEFAULT 100,
+      min_points INTEGER NOT NULL DEFAULT 30,
+      decay_minutes INTEGER NOT NULL DEFAULT 720,
+      answers TEXT NOT NULL DEFAULT '[]',
+      hints TEXT NOT NULL DEFAULT '[]',
+      published INTEGER NOT NULL DEFAULT 0,
+      notified_soon INTEGER NOT NULL DEFAULT 0,
+      notified_open INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS attempts (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      puzzle_id INTEGER NOT NULL,
+      answer TEXT NOT NULL,
+      correct INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS attempts_up ON attempts(user_id, puzzle_id);
+    CREATE TABLE IF NOT EXISTS solves (
+      user_id INTEGER NOT NULL,
+      puzzle_id INTEGER NOT NULL,
+      solved_at INTEGER NOT NULL,
+      points INTEGER NOT NULL,
+      place INTEGER NOT NULL,
+      PRIMARY KEY (user_id, puzzle_id)
+    );
+    CREATE TABLE IF NOT EXISTS hint_uses (
+      user_id INTEGER NOT NULL,
+      puzzle_id INTEGER NOT NULL,
+      idx INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, puzzle_id, idx)
+    );
+    CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+  `);
+  // Тип загадки добавлен позже: lock — замок, warmup — простая разминка дня.
+  try { db.exec("ALTER TABLE puzzles ADD COLUMN kind TEXT NOT NULL DEFAULT 'lock'"); } catch { /* колонка уже есть */ }
+  // Преподаватели и сотрудники играют в отдельном зачёте и не претендуют на приз студентов.
+  try { db.exec('ALTER TABLE users ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0'); } catch { /* колонка уже есть */ }
+  // Статистика для отчёта партнёру: источник прихода и приглашения друзей.
+  for (const col of ['src TEXT', 'ref_by INTEGER', 'ref_done INTEGER NOT NULL DEFAULT 0', 'bonus INTEGER NOT NULL DEFAULT 0', 'deposit INTEGER NOT NULL DEFAULT 0', 'dep_at INTEGER', 'phish_clicked INTEGER', 'phish_reported INTEGER'])
+    try { db.exec('ALTER TABLE users ADD COLUMN ' + col); } catch { /* колонка уже есть */ }
+  // «Почти верные» ответы: правильный промежуточный шаг. Хранитель отвечает подсказкой, штрафа нет.
+  try { db.exec("ALTER TABLE puzzles ADD COLUMN near TEXT NOT NULL DEFAULT '{}'"); } catch { /* колонка уже есть */ }
+  // Лимит решивших: пасхалка «первые пятеро». 0 — без лимита.
+  try { db.exec('ALTER TABLE puzzles ADD COLUMN max_solvers INTEGER NOT NULL DEFAULT 0'); } catch { /* колонка уже есть */ }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, vid TEXT NOT NULL, src TEXT, first INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, vid));
+    CREATE TABLE IF NOT EXISTS feedback (vid TEXT PRIMARY KEY, user_id INTEGER, rating INTEGER, learned TEXT, useful TEXT, again TEXT, text TEXT, created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS auctions (id INTEGER PRIMARY KEY, puzzle_num INTEGER NOT NULL, text TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
+      settled INTEGER NOT NULL DEFAULT 0, winner_id INTEGER, price INTEGER, bids_count INTEGER);
+    CREATE TABLE IF NOT EXISTS bids (auction_id INTEGER NOT NULL, user_id INTEGER NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (auction_id, user_id));
+    CREATE TABLE IF NOT EXISTS pageviews (day TEXT NOT NULL, path TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, path));
+  `);
+  return db;
+}
+
+module.exports = { openDb };
