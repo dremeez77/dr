@@ -129,7 +129,7 @@ function currentUser(cookies) {
   if (!cookies.sid) return null;
   return q('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?').get(cookies.sid) || null;
 }
-const publicUser = u => u && ({ id: u.id, nick: u.nick, group: u.group_name, staff: !!u.is_staff, provider: u.provider, needs_profile: !u.nick, banned: !!u.banned });
+const publicUser = u => u && ({ id: u.id, name: u.display_name || '', nick: u.nick, group: u.group_name, staff: !!u.is_staff, provider: u.provider, needs_profile: !u.nick, banned: !!u.banned });
 function requirePlayer(ctx) {
   const u = ctx.user;
   if (!u) fail(401, 'Сначала войди');
@@ -193,6 +193,10 @@ const baseTotal = u => q('SELECT COALESCE(SUM(points),0) t FROM solves WHERE use
 // Сортировка таблицы с учётом процентов по вкладу: проценты считаются на лету, поэтому их нельзя добавить в SQL.
 const withInterest = rows => rows.map(r => ({ ...r, total: r.total + interestOf(r) })).sort((a, b) => b.total - a.total || a.last - b.last);
 
+// ---------- Скрытая таблица ----------
+// Перед финалом организатор прячет таблицу: никто не видит ни чужих, ни своих баллов. Видно только в админке.
+const boardHidden = () => { const h = Number(kvGet('hide_at') || 0); return h > 0 && now() >= h; };
+
 // ---------- Значки ----------
 // Считаются на лету из решений, поэтому их не нужно хранить и пересчитывать.
 function badgesMap() {
@@ -255,7 +259,8 @@ route('GET', /^\/api\/state$/, ctx => {
   const puzzles = q("SELECT * FROM puzzles WHERE (published=1 OR kind='lock') AND kind NOT IN ('secret','page') ORDER BY num").all()
     .filter(p => p.kind !== 'flash' || (p.opens_at <= t && (t < flashEnd(p) || (u && q('SELECT 1 FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id))))).map(p => {
     const open = p.published === 1 && p.opens_at <= t;
-    const mine = u ? q('SELECT points, place FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) : null;
+    let mine = u ? q('SELECT points, place FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) : null;
+    if (mine && boardHidden()) mine = { points: null, place: null };
     return {
       num: p.num, kind: p.kind, opens_at: p.opens_at, open, draft: p.published !== 1, closes_at: p.kind === 'flash' ? flashEnd(p) : 0,
       title: open ? p.title : null,
@@ -264,14 +269,16 @@ route('GET', /^\/api\/state$/, ctx => {
       solved: mine || null,
     };
   });
-  const total = u ? baseTotal(u) + interestOf(u) : 0;
+  const hidden = boardHidden();
+  const total = u ? (hidden ? null : baseTotal(u) + interestOf(u)) : 0;
   const deposit = u && u.nick ? { amount: u.deposit, since: u.dep_at, interest: interestOf(u), rate: DEP_RATE, min: DEP_MIN, free: baseTotal(u), next_at: u.deposit ? u.dep_at + (Math.floor((now() - u.dep_at) / DAY) + 1) * DAY : 0 } : null;
   const invite = u && u.nick ? { url: `${cfg.baseUrl}/?r=${u.id}`, friends: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=1').get(u.id).c, pending: q('SELECT COUNT(*) c FROM users WHERE ref_by=? AND ref_done=0').get(u.id).c, per: REF_BONUS, max: REF_MAX } : null;
-  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, deposit, shards: shardsView(u), auction: (a => a && (!a.settled || now() - a.ends_at < 12 * 3600000) ? auctionView(a, u) : null)(curAuction()), badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
+  return { now: t, ends_at: endsAt(), user: publicUser(u), total, puzzles, invite, deposit: hidden ? null : deposit, shards: shardsView(u), board_hidden: hidden, cert_on: kvGet('cert_on') === '1', auction: (a => a && (!a.settled || now() - a.ends_at < 12 * 3600000) ? auctionView(a, u) : null)(curAuction()), badges: u ? (badgesMap().get(u.id) || []) : [], feedback_on: kvGet('feedback_on') === '1',
     login: { tg: !!(cfg.tgToken && cfg.tgUser), vk: !!(cfg.vkToken && cfg.vkScreen), dev: cfg.devLogin } };
 });
 
 route('GET', /^\/api\/leaderboard$/, () => {
+  if (boardHidden()) return { now: now(), hidden: true, players: q('SELECT COUNT(*) c FROM users WHERE nick IS NOT NULL AND banned=0').get().c, groups: [], staff: [], rows: [] };
   const all = withInterest(q(`SELECT u.id, u.nick, u.group_name, u.is_staff, u.deposit, u.dep_at, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last
                   FROM users u LEFT JOIN solves s ON s.user_id=u.id WHERE u.banned=0 AND u.nick IS NOT NULL
                   GROUP BY u.id HAVING total > 0 ORDER BY total DESC, last ASC`).all());
@@ -370,7 +377,7 @@ route('GET', /^\/api\/puzzle\/(\d+)$/, ctx => {
     auction_hint: (q('SELECT text FROM auctions WHERE puzzle_num=? AND winner_id=? AND settled=1').get(p.num, u.id) || {}).text || null,
     num: p.num, kind: p.kind, title: p.title, body: p.body, opens_at: p.opens_at, closes_at: p.kind === 'flash' ? flashEnd(p) : 0,
     max_points: p.max_points, min_points: p.min_points, decay_minutes: p.decay_minutes,
-    solved: q('SELECT points, place, solved_at FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) || null,
+    solved: (r => r && boardHidden() ? { ...r, points: null, place: null } : r)(q('SELECT points, place, solved_at FROM solves WHERE user_id=? AND puzzle_id=?').get(u.id, p.id) || null),
     wrong: wrongCount(u.id, p.id),
     cooldown_until: last + ATTEMPT_COOLDOWN_MS,
     hints: hints.map((h, i) => i < used ? { text: h.text, cost: h.cost, open: true } : { cost: h.cost, open: false }),
@@ -426,7 +433,7 @@ route('POST', /^\/api\/puzzle\/(\d+)\/answer$/, async ctx => {
     ]));
     else if (place === 3) keeper(`Замок №${p.num}: все три бонусных места заняты. Дальше только баллы за скорость, и они тают.`);
   }
-  return { correct: true, points, place };
+  return boardHidden() ? { correct: true, points: null, place: null } : { correct: true, points, place };
 });
 
 route('POST', /^\/api\/puzzle\/(\d+)\/hint$/, ctx => {
@@ -485,7 +492,7 @@ function auctionView(a, u) {
   const p = q('SELECT title, hints FROM puzzles WHERE num=?').get(a.puzzle_num);
   return { id: a.id, num: a.puzzle_num, title: p ? p.title : '', starts_at: a.starts_at, ends_at: a.ends_at, settled: !!a.settled, min: AUC_MIN,
     bids: a.settled ? a.bids_count : q('SELECT COUNT(*) c FROM bids WHERE auction_id=?').get(a.id).c,
-    my_bid: mine ? mine.amount : null, free: u ? freePoints(u) : 0,
+    my_bid: mine ? mine.amount : null, free: u && !boardHidden() ? freePoints(u) : null,
     winner: winner && { nick: winner.nick, group: winner.group_name }, price: a.settled ? a.price : null,
     won: !!(u && a.winner_id === u.id), text: u && a.winner_id === u.id ? a.text : null };
 }
@@ -552,10 +559,21 @@ const shardsSet = g => kvSet('shards', JSON.stringify(g));
 const shardWords = text => String(text || '').split(/\s+/).map(w => normalize(w)).filter(Boolean);
 // Игроки регистрируются по очереди, поэтому сдвиг по id раздаёт осколки поровну по кругу.
 const shardIdx = (g, u) => (u.id + g.seed) % g.words.length;
+// Если осколки только у лучших: держатель №h получает слова h, h+K, h+2K…
+const shardsOf = (g, u) => {
+  if (!g.holders) return [shardIdx(g, u)];
+  const h = g.holders.indexOf(u.id); if (h < 0) return [];
+  return g.words.map((_, i) => i).filter(i => i % g.holders.length === h);
+};
+function topPlayers(k) {
+  return withInterest(q(`SELECT u.id, u.nick, u.provider, u.provider_id, u.deposit, u.dep_at, COALESCE(SUM(s.points),0) + u.bonus total, COALESCE(MAX(s.solved_at), 9e15) last
+    FROM users u LEFT JOIN solves s ON s.user_id=u.id WHERE u.banned=0 AND u.is_staff=0 AND u.nick IS NOT NULL GROUP BY u.id HAVING total > 0`).all()).slice(0, k);
+}
 function shardsView(u) {
   const g = shardsGet(); if (!g || !g.words || g.state === 'scheduled' && now() < g.starts_at - 0) return g && g.state === 'scheduled' ? { state: 'scheduled', starts_at: g.starts_at } : null;
   const out = { state: g.state, n: g.words.length, ends_at: g.ends_at, best: g.best || 0, tries: g.tries || 0 };
-  if (u && u.nick && (g.state === 'active' || g.state === 'solved')) { const i = shardIdx(g, u); out.my = { pos: i + 1, word: g.raw[i] }; out.my_best = (g.mine || {})[u.id] || 0; out.last_try = (g.last || {})[u.id] || 0; }
+  out.top = g.holders ? g.holders.length : 0;
+  if (u && u.nick && (g.state === 'active' || g.state === 'solved')) { const mine = shardsOf(g, u); out.my = mine.length ? mine.map(i => ({ pos: i + 1, word: g.raw[i] })) : null; out.my_best = (g.mine || {})[u.id] || 0; }
   if (g.state === 'solved') Object.assign(out, { phrase: g.raw.join(' '), solved_by: g.solved_by, solved_at: g.solved_at });
   return out;
 }
@@ -563,8 +581,19 @@ function shardsTick() {
   const g = shardsGet(); if (!g) return;
   const t = now();
   if (g.state === 'scheduled' && t >= g.starts_at) {
-    g.state = 'active'; shardsSet(g);
-    keeper(`Завтра я уничтожу код от кейса.\n\nОстановить меня можно только одним способом. Я разбил ключ на ${g.words.length} осколков и раздал их вам. Каждому — свой. Он уже у тебя на сайте.\n\nСоберите фразу целиком — и я сдамся. Одному это не под силу.\n— Х.\n${cfg.baseUrl}`);
+    g.state = 'active';
+    if (g.k > 0) {
+      const top = topPlayers(g.k); g.holders = top.map(r => r.id);
+      shardsSet(g);
+      keeper(`Завтра я уничтожу код от кейса.\n\nОстановить меня можно только одним способом. Я разбил ключ на ${g.words.length} осколков и отдал их ${g.holders.length} лучшим игрокам недели. Кто они — не скажу.\n\nНайдите их. Соберите фразу целиком — и я сдамся.\n— Х.\n${cfg.baseUrl}`);
+      for (const r of top) {
+        const w = shardsOf(g, r).map(i => `№${i + 1} «${g.raw[i]}»`).join(', ');
+        bots.send(r, `🗝 Ты в числе ${g.holders.length} лучших. Тебе достались осколки ключа: ${w}.\nБез тебя ключ не собрать. Решай, с кем делиться.\n— Х.`).catch(() => {});
+      }
+    } else {
+      shardsSet(g);
+      keeper(`Завтра я уничтожу код от кейса.\n\nОстановить меня можно только одним способом. Я разбил ключ на ${g.words.length} осколков и раздал их вам. Каждому — свой. Он уже у тебя на сайте.\n\nСоберите фразу целиком — и я сдамся. Одному это не под силу.\n— Х.\n${cfg.baseUrl}`);
+    }
   } else if (g.state === 'active' && t >= g.ends_at) {
     g.state = 'failed'; shardsSet(g);
     keeper(`Время вышло. Лучшее, на что вы оказались способны, — ${g.best} из ${g.words.length}.\nКлюч уничтожен. Вы так и не узнаете, кто я.\n— Х.`);
@@ -603,7 +632,8 @@ route('POST', /^\/api\/admin\/shards$/, async ctx => {
   if (raw.length < 3 || raw.length > 12) fail(400, 'Фраза: от 3 до 12 слов');
   const starts = Number(b.starts_at) || now(), ends = Number(b.ends_at);
   if (!(ends > starts)) fail(400, 'Конец должен быть позже начала');
-  const g = { raw, words: raw.map(x => normalize(x)), seed: crypto.randomInt(0, 997), starts_at: starts, ends_at: ends, state: 'scheduled', best: 0, tries: 0 };
+  const k = Math.max(0, Math.min(20, Math.floor(Number(b.top) || 0)));
+  const g = { raw, words: raw.map(x => normalize(x)), seed: crypto.randomInt(0, 997), starts_at: starts, ends_at: ends, state: 'scheduled', best: 0, tries: 0, k };
   shardsSet(g); shardsTick();
   return { ok: true, state: shardsGet().state };
 });
@@ -611,8 +641,9 @@ route('GET', /^\/api\/admin\/shards$/, ctx => {
   requireAdmin(ctx);
   const g = shardsGet(); if (!g) return { shards: null };
   const dist = g.words.map(() => 0);
-  for (const r of q('SELECT id FROM users WHERE nick IS NOT NULL AND banned=0').all()) dist[shardIdx(g, r)]++;
-  return { shards: { ...g, last: undefined, mine: undefined }, dist };
+  for (const r of q('SELECT id FROM users WHERE nick IS NOT NULL AND banned=0').all()) for (const i of shardsOf(g, r)) dist[i]++;
+  const holders = (g.holders || []).map(id => { const r = q('SELECT id, nick, group_name FROM users WHERE id=?').get(id); return r && { nick: r.nick, group: r.group_name, words: shardsOf(g, r).map(i => `№${i + 1} ${g.raw[i]}`) }; }).filter(Boolean);
+  return { shards: { ...g, last: undefined, mine: undefined }, dist, holders };
 });
 
 // --- Учебный фишинг ---
@@ -913,7 +944,7 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
     now: now(), ends_at: endsAt(), base_url: cfg.baseUrl,
     bots: { tg: !!cfg.tgToken, vk: !!cfg.vkToken },
     trap_count: Number(kvGet('trap_count') || 0),
-    feedback_on: kvGet('feedback_on') === '1', final_question: kvGet('final_question') || '', final_answer: kvGet('final_answer') || '',
+    feedback_on: kvGet('feedback_on') === '1', cert_on: kvGet('cert_on') === '1', hide_at: Number(kvGet('hide_at') || 0), final_question: kvGet('final_question') || '', final_answer: kvGet('final_answer') || '',
     show_team: kvGet('show_team') || '', show_vtb: kvGet('show_vtb') || '', auction_price: kvGet('auction_price') || '', show_photos: parse(kvGet('show_photos'), {}), show_group: kvGet('show_group') || '',
     puzzles: q('SELECT * FROM puzzles ORDER BY num').all().map(p => ({
       ...p, answers: parse(p.answers, []), hints: parse(p.hints, []),
@@ -921,7 +952,8 @@ route('GET', /^\/api\/admin\/overview$/, ctx => {
       tries: q('SELECT COUNT(*) c FROM attempts WHERE puzzle_id=?').get(p.id).c,
     })),
     users: withInterest(q(`SELECT u.id, u.provider, u.provider_id, u.display_name, u.nick, u.group_name, u.banned, u.created_at,
-              u.is_staff, u.src, u.ref_by, u.deposit, u.dep_at, 0 last, COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) + u.bonus total
+              u.is_staff, u.src, u.ref_by, u.deposit, u.dep_at, u.bonus, 0 last,
+              (SELECT COUNT(*) FROM users r WHERE r.ref_by=u.id AND r.ref_done=1) refs_done, (SELECT COUNT(*) FROM users r WHERE r.ref_by=u.id AND r.ref_done=0) refs_wait, COALESCE((SELECT SUM(points) FROM solves WHERE user_id=u.id),0) + u.bonus total
               FROM users u ORDER BY total DESC, u.id`).all()),
     phish: phishStats(),
   };
@@ -1066,6 +1098,17 @@ route('POST', /^\/api\/admin\/upload$/, async ctx => {
   return { url: '/uploads/' + name };
 });
 
+// Ручная правка баллов: например, если приглашения друзей не засчитались.
+route('POST', /^\/api\/admin\/bonus$/, async ctx => {
+  requireAdmin(ctx);
+  const { id, amount, reason } = await ctx.body();
+  const a = Math.round(Number(amount)); if (!a || Math.abs(a) > 500) fail(400, 'Сумма от −500 до 500');
+  const u = q('SELECT * FROM users WHERE id=?').get(Number(id)); if (!u) fail(404, 'Нет такого игрока');
+  q('UPDATE users SET bonus=bonus+? WHERE id=?').run(a, u.id);
+  if (reason) bots.send(u, `🗝 ${a > 0 ? '+' : ''}${a} баллов: ${String(reason).slice(0, 200)}`).catch(() => {});
+  return { ok: true };
+});
+
 route('POST', /^\/api\/admin\/ban$/, async ctx => {
   requireAdmin(ctx);
   const b = await ctx.body();
@@ -1079,6 +1122,8 @@ route('POST', /^\/api\/admin\/settings$/, async ctx => {
   if (b.ends_at !== undefined) kvSet('ends_at', Number(b.ends_at) || 0);
   if (b.reset_trap) kvSet('trap_count', 0);
   if (b.feedback_on !== undefined) kvSet('feedback_on', b.feedback_on ? '1' : '0');
+  if (b.cert_on !== undefined) kvSet('cert_on', b.cert_on ? '1' : '0');
+  if (b.hide_at !== undefined) { kvSet('hide_at', Number(b.hide_at) || 0); kvSet('hide_announced', ''); }
   if (b.final_question !== undefined) kvSet('final_question', String(b.final_question));
   for (const k of ['show_team', 'show_vtb', 'auction_price']) if (b[k] !== undefined) kvSet(k, String(b[k]).slice(0, 2000));
   // Фото команды для слайда «Кто мы»: { «Имя Фамилия»: «/uploads/…» }. Принимаем только загруженные на сайт файлы.
@@ -1266,6 +1311,8 @@ function notifyTick() {
   try { settleAuctions(); } catch (e) { console.error('auction', e.message); }
   try { goalTick(); } catch (e) { console.error('goal', e.message); }
   try { shardsTick(); } catch (e) { console.error('shards', e.message); }
+  if (boardHidden() && !kvGet('hide_announced')) { kvSet('hide_announced', 1);
+    keeper('Я закрыл таблицу.\nС этой минуты никто не знает, сколько у кого баллов. Даже вы сами.\nВсё решится на финале.\n— Х.'); }
   const users = () => q("SELECT provider, provider_id FROM users WHERE banned=0 AND provider IN ('tg','vk')").all();
   // Скрытые страницы и пасхалки не объявляются: их нужно найти.
   q("UPDATE puzzles SET notified_open=1, notified_soon=1 WHERE kind IN ('page','secret') AND notified_open=0").run();

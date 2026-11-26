@@ -52,6 +52,7 @@ async function load() {
     const nums = s.puzzles.filter(p => p.kind !== 'warmup').map(p => p.num);
     // Каждые 20 секунд экран переключается между личным зачётом и зачётом групп.
     const tbl = document.getElementById('table'), before = FX.capture(tbl);
+    if (b.hidden) { document.getElementById('sub').textContent = 'ТАБЛИЦА СКРЫТА'; tbl.innerHTML = '<div class="empty">🔒 Хранитель скрыл таблицу до финала.<br>Никто не знает, кто впереди. Всё решится на сцене.</div>'; document.getElementById('players').textContent = 'Участников: ' + b.players; document.getElementById('url').textContent = location.host; tick(); return; }
     const showGroups = b.groups.length > 1 && Math.floor(Date.now() / 20000) % 2 === 1 && mode !== 'players' || mode === 'groups';
     document.getElementById('sub').textContent = showGroups ? 'ЗАЧЁТ ГРУПП · БАЛЛЫ ПЯТИ ЛУЧШИХ' : 'ЛИЧНЫЙ ЗАЧЁТ';
     if (showGroups) {

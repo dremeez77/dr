@@ -85,7 +85,7 @@ function renderHeader() {
   const el = $('#me');
   if (!S) return;
   if (S.user && S.user.nick) {
-    el.innerHTML = `<span class="pill gold"><span data-count="me" data-v="${S.total}">${S.total}</span> ${plural(S.total, 'балл', 'балла', 'баллов')}</span><b>${esc(S.user.nick)}</b><button class="ghost small" id="logout">Выйти</button>`;
+    el.innerHTML = `${S.total == null ? '<span class="pill" title="Хранитель скрыл баллы до финала">🔒 баллы скрыты</span>' : `<span class="pill gold"><span data-count="me" data-v="${S.total}">${S.total}</span> ${plural(S.total, 'балл', 'балла', 'баллов')}</span>`}<b>${esc(S.user.nick)}</b><button class="ghost small" id="logout">Выйти</button>`;
     $('#logout').onclick = async () => { await api('/api/auth/logout', {}); await refresh(); go(); };
     FX.count(el);
   } else {
@@ -120,7 +120,7 @@ function meHtml() {
     const on = mine.includes(k), secret = k === 'curious' && !on;
     return `<div class="badge ${on ? 'on' : ''}"><span class="bi">${secret ? '❔' : ic}</span><b>${secret ? 'Секретный' : name}</b><span>${secret ? 'Как получить — секрет' : how}</span></div>`;
   }).join('')}</div>
-  <p style="margin-top:14px"><button id="cardBtn" class="ghost">📸 Карточка для сторис</button></p>`;
+  <p style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">${S.total == null ? '' : '<button id="cardBtn" class="ghost">📸 Карточка для сторис</button>'}${S.cert_on ? '<button id="certBtn">🎓 Мой сертификат</button>' : ''}</p>`;
 }
 
 // Четыре засова вокруг сферы: серый — замок закрыт, синий — идёт взлом, зелёный — кто-то уже взломал.
@@ -157,8 +157,8 @@ function auctionHtml() {
     ${!S.user || !S.user.nick ? '<span class="muted">Войди в игру, чтобы сделать ставку.</span>'
       : solved ? '<span class="muted">Этот замок ты уже открыл.</span>'
       : S.deposit && S.deposit.amount ? '<span class="muted">Пока открыт вклад, подсказки недоступны — и на аукционе тоже.</span>'
-      : `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><input id="bidAmt" type="number" min="${a.min}" max="${a.free}" value="${a.my_bid || a.min}" style="width:120px">
-        <button id="bidGo">${a.my_bid ? 'Изменить ставку' : 'Сделать ставку'}</button>${a.my_bid ? '<button id="bidDel" class="ghost">Отозвать</button>' : ''}<span class="muted" style="font-size:14px">свободно ${a.free} · минимум ${a.min}</span></div>`}
+      : `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><input id="bidAmt" type="number" min="${a.min}" ${a.free == null ? '' : `max="${a.free}"`} value="${a.my_bid || a.min}" style="width:120px">
+        <button id="bidGo">${a.my_bid ? 'Изменить ставку' : 'Сделать ставку'}</button>${a.my_bid ? '<button id="bidDel" class="ghost">Отозвать</button>' : ''}<span class="muted" style="font-size:14px">${a.free == null ? '' : `свободно ${a.free} · `}минимум ${a.min}</span></div>`}
   </div></div>`;
 }
 
@@ -172,19 +172,65 @@ function shardsHtml() {
   const me = g.my;
   return `<section class="shards"><div class="sh-k"><i class="pulse-dot red"></i>ТРЕВОГА · ОПЕРАЦИЯ «ОСКОЛКИ»</div>
     <h2 class="sh-h">Хранитель уничтожит код от кейса через <span data-cds="${g.ends_at}">${fmtShort(g.ends_at - serverNow())}</span></h2>
-    <p class="sh-p">Ключ разбит на ${g.n} осколков. У каждого игрока — свой. Соберите фразу целиком, и Хранитель сдастся. Одному это не под силу: ищите остальных в комментариях ВК и в чатах групп.</p>
-    ${me ? `<div class="sh-mine"><span>ТВОЙ ОСКОЛОК</span><b>№${me.pos} из ${g.n}</b><div class="sh-word">${esc(me.word)}</div>
-      <button class="ghost small" id="shCopy">Скопировать для комментария</button></div>`
+    <p class="sh-p">${g.top ? `Ключ разбит на ${g.n} осколков, и они у ${g.top} лучших игроков. Соберите фразу целиком, и Хранитель сдастся. Каждый игрок получит +10 баллов.` : `Ключ разбит на ${g.n} осколков. У каждого игрока — свой. Соберите фразу целиком, и Хранитель сдастся. Одному это не под силу: ищите остальных в комментариях ВК и в чатах групп.`}</p>
+    ${me ? `<div class="sh-mine"><span>${me.length > 1 ? 'ТВОИ ОСКОЛКИ' : 'ТВОЙ ОСКОЛОК'}</span>${me.map(m => `<b>№${m.pos} из ${g.n}</b><div class="sh-word">${esc(m.word)}</div>`).join('')}
+      <button class="ghost small" id="shCopy">Скопировать</button></div>`
+    : g.top ? `<div class="sh-mine"><span>ОСКОЛКИ У ЛУЧШИХ</span><div class="sh-word" style="font-size:22px;line-height:1.3">Осколки достались ${g.top} лучшим игрокам недели</div><p class="muted" style="margin:0;font-size:14px">Кто они — Хранитель не говорит. Найди их: в комментариях ВК, в чатах групп, в коридоре. Собрать фразу и ввести её может любой.</p></div>`
     : `<div class="sh-mine"><span>ТВОЙ ОСКОЛОК</span><div class="sh-word" style="font-size:20px">Войди в игру, чтобы получить осколок</div>${S.user ? '' : '<button class="small" id="shLogin">Войти</button>'}</div>`}
     <div class="sh-prog"><span>Лучшая попытка: <b>${g.best} из ${g.n}</b> слов на своих местах · попыток: ${g.tries}</span>${bar}</div>
-    ${me ? `<form id="shForm" class="answer"><input id="shIn" autocomplete="off" placeholder="Вся фраза по порядку"><button>Собрать</button></form><div class="msg" id="shMsg">${g.my_best ? `Твой лучший результат: ${g.my_best} из ${g.n}` : ''}</div>` : ''}
+    ${S.user && S.user.nick ? `<form id="shForm" class="answer"><input id="shIn" autocomplete="off" placeholder="Вся фраза по порядку"><button>Собрать</button></form><div class="msg" id="shMsg">${g.my_best ? `Твой лучший результат: ${g.my_best} из ${g.n}` : ''}</div>` : ''}
   </section>`;
+}
+
+// ---------- Именной сертификат участника ----------
+function openCert() {
+  modal(`<h3>Сертификат участника</h3><p class="muted" style="margin:0 0 6px">Впиши имя и фамилию так, как они должны стоять в сертификате.</p>
+    <form id="cf"><label for="cn">Имя и фамилия</label><input id="cn" maxlength="40" required value="${esc(S.user.name || S.user.nick)}">
+    <button style="width:100%;margin-top:12px">Сделать сертификат</button></form><div id="cout"></div>`);
+  $('#cf').onsubmit = async e => { e.preventDefault(); const n = $('#cn').value.trim(); if (n.length < 2) return; await makeCert(n); };
+}
+async function makeCert(name) {
+  const W = 2339, H = 1654, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d'), F = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif', M = 'ui-monospace, Menlo, Consolas, monospace';
+  const g = c.createRadialGradient(W * .3, H * .35, 60, W * .4, H * .45, 1700); g.addColorStop(0, '#13277a'); g.addColorStop(1, '#040b2c');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  c.strokeStyle = 'rgba(25,181,254,.35)'; c.lineWidth = 4; c.strokeRect(70, 70, W - 140, H - 140);
+  c.strokeStyle = 'rgba(25,181,254,.15)'; c.lineWidth = 2; c.strokeRect(95, 95, W - 190, H - 190);
+  // эмблема
+  const ex = W - 380, ey = 360; c.strokeStyle = '#19b5fe'; c.lineWidth = 12; c.beginPath(); c.arc(ex, ey, 140, 0, 6.283); c.stroke();
+  [[0, -1], [1, 0], [0, 1], [-1, 0]].forEach(([dx, dy]) => { c.beginPath(); c.moveTo(ex + dx * 115, ey + dy * 115); c.lineTo(ex + dx * 185, ey + dy * 185); c.stroke(); });
+  c.fillStyle = '#19b5fe'; c.beginPath(); c.arc(ex, ey - 30, 36, 0, 6.283); c.fill(); c.beginPath(); c.moveTo(ex, ey - 10); c.lineTo(ex - 30, ey + 75); c.lineTo(ex + 30, ey + 75); c.closePath(); c.fill();
+  const L = 190; c.textAlign = 'left';
+  c.fillStyle = '#93a5cf'; c.font = `700 40px ${M}`; c.fillText('Х Р А Н И Л И Щ Е', L, 230);
+  c.font = `700 34px ${M}`; c.fillText(`№ ${String(S.user.id).padStart(4, '0')}`, L, 290);
+  c.fillStyle = '#e9edf1'; c.font = `900 150px ${F}`; c.fillText('Сертификат', L, 520);
+  c.fillStyle = '#19b5fe'; c.font = `700 56px ${F}`; c.fillText('участника игры «Хранилище»', L, 610);
+  let fs = 120; c.font = `800 ${fs}px ${F}`; while (c.measureText(name).width > W - L - 260 && fs > 60) { fs -= 6; c.font = `800 ${fs}px ${F}`; }
+  c.fillStyle = '#ffffff'; c.fillText(name, L, 820);
+  c.strokeStyle = 'rgba(147,165,207,.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(L, 860); c.lineTo(W - 260, 860); c.stroke();
+  c.fillStyle = '#93a5cf'; c.font = `600 40px ${M}`; c.fillText(`${(S.user.group || '').toUpperCase()}${S.user.nick ? '  ·  ИГРОК «' + S.user.nick.toUpperCase() + '»' : ''}`, L, 930);
+  const locks = S.puzzles.filter(p => p.kind === 'lock'), opened = locks.filter(p => p.solved).length, nb = (S.badges || []).length;
+  const stats = [`открыто замков: ${opened} из ${locks.length}`, nb ? `значков: ${nb}` : '', S.total != null ? `баллов: ${S.total}` : ''].filter(Boolean).join('  ·  ');
+  c.fillStyle = '#d5def3'; c.font = `500 46px ${F}`;
+  c.fillText('Хранитель признаёт: этот человек прошёл Неделю финансовой грамотности СПбГАУ', L, 1050);
+  c.fillText('и думал своей головой, когда речь шла о деньгах.', L, 1115);
+  c.fillStyle = '#19b5fe'; c.font = `700 46px ${F}`; c.fillText(stats, L, 1210);
+  c.fillStyle = '#93a5cf'; c.font = `500 36px ${F}`; c.fillText('23–27 ноября 2026 · Санкт-Петербургский государственный аграрный университет · при поддержке банка ВТБ', L, 1330, W - L - 200);
+  const sig = (x, who, role) => { c.strokeStyle = 'rgba(147,165,207,.7)'; c.lineWidth = 3; c.beginPath(); c.moveTo(x, 1440); c.lineTo(x + 560, 1440); c.stroke();
+    c.textAlign = 'center'; c.fillStyle = '#d5def3'; c.font = `700 34px ${M}`; c.fillText(who, x + 280, 1490); c.fillStyle = '#93a5cf'; c.font = `500 30px ${F}`; c.fillText(role, x + 280, 1535); c.textAlign = 'left'; };
+  sig(L, 'И. А. АНЦИБОР', 'руководитель проекта'); sig(L + 760, 'Х.', 'Хранитель');
+  c.fillStyle = 'rgba(147,165,207,.8)'; c.font = `600 30px ${M}`; c.textAlign = 'right'; c.fillText(location.host || 'hranilischespbgau.ru', W - 190, 1535); c.textAlign = 'left';
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png')), url = URL.createObjectURL(blob);
+  const file = new File([blob], 'sertifikat-hranilische.png', { type: 'image/png' });
+  $('#cout').innerHTML = `<img src="${url}" alt="Сертификат" style="width:100%;border-radius:10px;border:1px solid var(--line);margin-top:14px">
+    <p style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 0"><a class="btn" href="${url}" download="sertifikat-hranilische.png" style="display:inline-block;padding:12px 16px;background:var(--gold);color:#111;border-radius:10px;text-decoration:none;font-weight:600">Скачать</a>${navigator.canShare && navigator.canShare({ files: [file] }) ? '<button id="cShare2" class="ghost">Поделиться</button>' : ''}</p>`;
+  const sb = $('#cShare2'); if (sb) sb.onclick = () => navigator.share({ files: [file], title: 'Сертификат' }).catch(() => {});
 }
 
 function flashHtml(list) {
   if (!list.length) return '';
   return `<h2>⚡ Молниеносный замок</h2><div class="locks">${list.map(p => p.solved
-    ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">МОЛНИЕНОСНЫЙ · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span><span class="big">+${p.solved.points}</span><span class="sub">решили: ${p.solvers}</span></a>`
+    ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">МОЛНИЕНОСНЫЙ · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span><span class="big">${PTS(p.solved.points)}</span><span class="sub">решили: ${p.solvers}</span></a>`
     : `<a class="lock open flash" href="#/lock/${p.num}"><span class="n">МОЛНИЕНОСНЫЙ · ИСЧЕЗНЕТ ЧЕРЕЗ</span><span class="t">${esc(p.title)}</span><span class="big" data-cds="${p.closes_at}">${fmtShort(p.closes_at - serverNow())}</span><span class="sub">сейчас стоит ${valueNow(p)} баллов · решили: ${p.solvers}</span></a>`).join('')}</div>`;
 }
 
@@ -297,7 +343,7 @@ function renderHome() {
     if (!p.open) return `<div class="lock closed">${ICON_C}<span class="n">ЗАМОК №${p.num}</span><span class="t">Закрыт</span>
       <span class="big" data-cds="${p.opens_at}">${fmtShort(p.opens_at - serverNow())}</span><span class="sub">${esc(fmtWhen(p.opens_at))}</span></div>`;
     if (p.solved) return `<a class="lock solved" href="#/lock/${p.num}">${ICON_O}<span class="n">ЗАМОК №${p.num} · ОТКРЫТ ТОБОЙ</span><span class="t">${esc(p.title)}</span>
-      <span class="big">+${p.solved.points}</span><span class="sub">Ты решил ${p.solved.place}-м · всего решили: ${p.solvers}</span></a>`;
+      <span class="big">${PTS(p.solved.points)}</span><span class="sub">${p.solved.place ? `Ты решил ${p.solved.place}-м · ` : ''}всего решили: ${p.solvers}</span></a>`;
     return `<a class="lock open" href="#/lock/${p.num}">${ICON_C}<span class="n">ЗАМОК №${p.num} · ИДЁТ ВЗЛОМ</span><span class="t">${esc(p.title)}</span>
       <span class="big"><span data-val="${p.num}">${valueNow(p)}</span></span><span class="sub">баллов сейчас · решили: ${p.solvers}</span></a>`;
   }).join('');
@@ -325,7 +371,7 @@ function renderHome() {
     <h2>Замки</h2>
     <div class="locks">${locks || '<p class="muted">Замки появятся здесь после открытия недели.</p>'}</div>
     ${warm.length ? `<h2>Разминка дня</h2><div class="locks">${warm.map(p => p.solved
-      ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">РАЗМИНКА · РЕШЕНО</span><span class="t">${esc(p.title)}</span><span class="big">+${p.solved.points}</span><span class="sub">ответили верно: ${p.solvers}</span></a>`
+      ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">РАЗМИНКА · РЕШЕНО</span><span class="t">${esc(p.title)}</span><span class="big">${PTS(p.solved.points)}</span><span class="sub">ответили верно: ${p.solvers}</span></a>`
       : `<a class="lock open" href="#/lock/${p.num}"><span class="n">РАЗМИНКА · БЕЗ СПЕШКИ</span><span class="t">${esc(p.title)}</span><span class="big">${p.max_points}</span><span class="sub">баллов каждому · ответили: ${p.solvers}</span></a>`).join('')}</div>` : ''}
     <h2>Лидеры${board ? ` · участников: ${board.players}` : ''}</h2>
     ${boardHtml(15)}
@@ -363,10 +409,11 @@ function renderHome() {
     } catch (err) { $('#shMsg').innerHTML = `<span class="red">${esc(err.message)}</span>`; }
   };
   const shc = $('#shCopy'); if (shc) shc.onclick = async () => {
-    const t = `🧩 Осколок №${S.shards.my.pos} из ${S.shards.n}: «${S.shards.my.word}» #ХранилищеОсколки`;
+    const t = S.shards.my.map(m => `🧩 Осколок №${m.pos} из ${S.shards.n}: «${m.word}»`).join('\n') + ' #ХранилищеОсколки';
     try { await navigator.clipboard.writeText(t); shc.textContent = 'Скопировано ✓'; } catch { prompt('Скопируй', t); }
   };
   const shl = $('#shLogin'); if (shl) shl.onclick = openLogin;
+  const ce = $('#certBtn'); if (ce) ce.onclick = () => openCert();
   const cb = $('#cardBtn'); if (cb) cb.onclick = () => makeCard().catch(e => alert('Не получилось: ' + e.message));
   const qb = $('#invQr'); if (qb) qb.onclick = () => showQr().catch(e => alert('Не получилось: ' + e.message));
   const ib = $('#invCopy'); if (ib) ib.onclick = async () => {
@@ -380,7 +427,10 @@ function renderHome() {
   tick();
 }
 
+const PTS = x => x == null ? '✓' : '+' + x;
+
 function boardHtml(limit) {
+  if (board && board.hidden) return `<div class="rules"><div class="rule" style="grid-column:1/-1;text-align:center"><b>🔒 Таблица скрыта Хранителем</b><span>До финала никто не знает, кто впереди. Даже вы сами. Всё решится в пятницу на сцене.</span></div></div>`;
   if (!board || !board.rows.length) return '<p class="muted">Пока никто не открыл ни одного замка. Стань первым.</p>';
   const nums = S ? S.puzzles.filter(p => p.kind !== 'warmup').map(p => p.num) : [];
   const hasWarm = S && S.puzzles.some(p => p.kind === 'warmup');
@@ -397,7 +447,7 @@ function boardHtml(limit) {
 }
 
 function groupsHtml() {
-  if (!board || !board.groups || !board.groups.length) return '';
+  if (!board || board.hidden || !board.groups || !board.groups.length) return '';
   const mine = S && S.user ? (S.user.staff ? 'Преподаватели' : S.user.group) : null;
   const g = `<h2>Зачёт групп</h2><div class="tbl-scroll"><table class="tbl"><thead><tr><th>#</th><th>Команда</th><th class="r">Игроков</th><th class="r">Баллы топ-5</th></tr></thead><tbody>${
     board.groups.slice(0, 10).map(x => `<tr class="${x.name === mine ? 'me-row' : ''}"><td class="rank ${x.rank === 1 ? 'rank-1' : ''}">${x.rank}</td><td>${esc(x.name)}${x.staff ? ' <span class="pill" style="font-size:11px;padding:4px 8px">команда преподавателей</span>' : ''}</td><td class="r">${x.players}</td><td class="r"><b>${x.total}</b></td></tr>`).join('')
@@ -437,8 +487,8 @@ async function renderLock(num) {
 function renderAnswer() {
   const box = $('#answerBox');
   if (P.solved) {
-    box.innerHTML = `<div class="solved-box"><b class="green">Замок открыт. +${P.solved.points} ${plural(P.solved.points, 'балл', 'балла', 'баллов')}</b><br>
-      <span class="muted">${P.kind === 'warmup' ? 'Разминка засчитана.' : P.kind === 'secret' ? 'Ты успел. Никому не рассказывай, где эта дверь.' : `Ты решил ${P.solved.place}-м. Ответ никому не рассказывай: приз один.`}</span></div>`;
+    box.innerHTML = `<div class="solved-box"><b class="green">Замок открыт.${P.solved.points == null ? ' Баллы скрыты до финала.' : ` +${P.solved.points} ${plural(P.solved.points, 'балл', 'балла', 'баллов')}`}</b><br>
+      <span class="muted">${P.kind === 'warmup' ? 'Разминка засчитана.' : P.kind === 'secret' ? 'Ты успел. Никому не рассказывай, где эта дверь.' : (P.solved.place ? `Ты решил ${P.solved.place}-м. ` : '') + 'Ответ никому не рассказывай: приз один.'}</span></div>`;
     return;
   }
   if (P.over) { box.innerHTML = `<div class="msg muted">Игра завершена, ответы больше не принимаются.</div>`; return; }

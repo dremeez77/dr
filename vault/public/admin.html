@@ -150,11 +150,15 @@ function editP(p) {
 
 // ---------- Участники ----------
 function paneU() {
-  $('#pane').innerHTML = `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Ник</th><th>Группа</th><th>Вход</th><th>Имя в мессенджере</th><th class="r">Баллы</th><th></th></tr></thead><tbody>
-    ${D.users.map(u => `<tr><td>${esc(u.nick || '—')}</td><td>${esc(u.group_name || '')}${u.is_staff ? ' <span class="gold">· преподаватель</span>' : ''}</td><td class="mono">${esc(u.provider)}:${esc(u.provider_id)}</td><td>${esc(u.display_name)}</td><td class="r">${u.total}</td>
-      <td><button class="ghost small" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Вернуть' : 'Заблокировать'}</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Пока никого</td></tr>'}
-    </tbody></table></div><p class="note">Заблокированный игрок пропадает из таблицы лидеров и не может отвечать. Его баллы сохраняются, блокировку можно снять.</p>`;
+  $('#pane').innerHTML = `<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Ник</th><th>Группа</th><th>Вход</th><th>Имя в мессенджере</th><th class="r">Друзья</th><th class="r">Баллы</th><th></th></tr></thead><tbody>
+    ${D.users.map(u => `<tr><td>${esc(u.nick || '—')}</td><td>${esc(u.group_name || '')}${u.is_staff ? ' <span class="gold">· преподаватель</span>' : ''}</td><td class="mono">${esc(u.provider)}:${esc(u.provider_id)}</td><td>${esc(u.display_name)}</td><td class="r" title="засчитано / ещё не решили ни одной загадки">${u.refs_done || 0}${u.refs_wait ? ` <span class="muted">+${u.refs_wait}</span>` : ''}</td><td class="r">${u.total}${u.bonus ? ` <span class="muted" title="из них бонусы">(${u.bonus > 0 ? '+' : ''}${u.bonus})</span>` : ''}</td>
+      <td style="white-space:nowrap"><button class="ghost small" data-bonus="${u.id}" data-nick="${esc(u.nick || '')}">± баллы</button> <button class="ghost small" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Вернуть' : 'Заблокировать'}</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Пока никого</td></tr>'}
+    </tbody></table></div><p class="note">«Друзья»: сколько приглашённых засчитано, серым — сколько вошли по ссылке, но ещё не решили ни одной загадки (бонус придёт, когда решат). Если приглашение не засчиталось, начисли баллы вручную кнопкой «± баллы» — игроку придёт сообщение от бота. Заблокированный игрок пропадает из таблицы лидеров.</p>`;
   document.querySelectorAll('[data-ban]').forEach(b => b.onclick = async () => { await api('/api/admin/ban', { id: Number(b.dataset.ban), banned: b.dataset.v === '1' }); load(); });
+  document.querySelectorAll('[data-bonus]').forEach(b => b.onclick = async () => {
+    const a = prompt(`Сколько баллов начислить игроку ${b.dataset.nick}? (минус — списать)`, '5'); if (!a) return;
+    const reason = prompt('За что? Это увидит игрок в сообщении от бота (можно оставить пустым)', 'приглашённые друзья');
+    try { await api('/api/admin/bonus', { id: Number(b.dataset.bonus), amount: Number(a), reason }); load(); } catch (e) { alert(e.message); } });
 }
 
 // ---------- Попытки ----------
@@ -251,19 +255,28 @@ function paneSet() {
   if (D.auction_price) $('#gk').value = D.auction_price; // цена, которую техник ввёл на слайде аукциона
   $('#saveEnds').onclick = async () => { await api('/api/admin/settings', { ends_at: fromLocal($('#ends').value) }); $('#eok').textContent = 'Сохранено'; };
   $('#resetTrap').onclick = async () => { await api('/api/admin/settings', { reset_trap: true }); load(); };
+  $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="hideCard"><b>🔒 Скрыть таблицу перед финалом</b>
+    <p class="note">С указанного времени игроки не видят ни таблицу, ни чужие и свои баллы (на сайте, на /board, в карточках). Хранитель сам объявит это всем. Ты видишь всё в админке, сцена финала работает как обычно. Показать снова — кнопкой ниже.</p>
+    <div class="grid"><div><label>Скрыть с</label><input id="hdAt" type="datetime-local" value="${toLocal(D.hide_at || (() => { const d = new Date(); d.setHours(20, 0, 0, 0); return d.getTime(); })())}"></div></div>
+    <div class="bar"><button id="hdGo">${D.hide_at ? 'Изменить время' : 'Скрыть в это время'}</button><button class="ghost" id="hdOff">Показать таблицу</button><span class="ok" id="hdok">${D.hide_at ? (D.hide_at <= Date.now() ? ' Сейчас таблица СКРЫТА' : ' Скроется ' + new Date(D.hide_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })) : ''}</span></div>
+    <label class="chk"><input type="checkbox" id="certOn" ${D.cert_on ? 'checked' : ''}> 🎓 Показать игрокам кнопку «Мой сертификат» (именной сертификат участника, каждый скачивает сам)</label><span class="ok" id="certok"></span></div>`);
+  $('#hdGo').onclick = async () => { await api('/api/admin/settings', { hide_at: fromLocal($('#hdAt').value) }); $('#hdok').textContent = ' Сохранено'; };
+  $('#hdOff').onclick = async () => { if (confirm('Показать таблицу всем?')) { await api('/api/admin/settings', { hide_at: 0 }); $('#hdok').textContent = ' Таблица снова видна'; } };
+  $('#certOn').onchange = async e => { await api('/api/admin/settings', { cert_on: e.target.checked }); $('#certok').textContent = ' Сохранено'; };
   $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="shCard" style="border-color:var(--red)"><b>🧩 Операция «Осколки»</b>
     <p class="note">Секретная фраза делится на слова: каждый игрок видит одно слово и его номер. Кто введёт фразу целиком — всем игрокам +10, собравшему ещё +10, Хранитель «сдаётся». В момент начала бот сам объявит тревогу, сайт покраснеет. Если к концу не соберут — Хранитель объявит провал. Фраза хранится только в базе, в коде её нет.</p>
     <label>Секретная фраза (3–12 слов)</label><input id="shPh" placeholder="Например: Хранитель это каждый кто думает своей головой">
-    <div class="grid"><div><label>Начало</label><input id="shSt" type="datetime-local"></div><div><label>Конец</label><input id="shEn" type="datetime-local"></div></div>
+    <div class="grid"><div><label>Начало</label><input id="shSt" type="datetime-local"></div><div><label>Конец</label><input id="shEn" type="datetime-local"></div>
+    <div><label>Осколки только топ-N (0 — всем)</label><input id="shTop" type="number" value="5" min="0" max="20"></div></div>
     <div class="bar"><button id="shGo">Запустить операцию</button><button class="ghost" id="shOff">Отменить</button><span class="ok" id="shok"></span></div><div class="note" id="shState"></div></div>`);
   (async () => { const d1 = new Date(); d1.setDate(d1.getDate() + (d1.getHours() >= 22 ? 1 : 0)); d1.setHours(22, 0, 0, 0);
     const d2 = new Date(d1); d2.setDate(d2.getDate() + 1); d2.setHours(12, 0, 0, 0);
     $('#shSt').value = toLocal(d1.getTime()); $('#shEn').value = toLocal(d2.getTime());
     try { const r = await api('/api/admin/shards'); const g = r.shards; if (!g) return;
       const st = { scheduled: 'запланирована', active: 'ИДЁТ', solved: 'КЛЮЧ СОБРАН', failed: 'провалена' }[g.state];
-      $('#shState').innerHTML = `Статус: <b>${st}</b> · фраза: «${esc(g.raw.join(' '))}» · начало ${new Date(g.starts_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} · конец ${new Date(g.ends_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}<br>Лучшая попытка: ${g.best} из ${g.raw.length} · попыток: ${g.tries}${g.solved_by ? ' · собрал: ' + esc(g.solved_by) : ''}<br>Осколков на руках: ${r.dist.map((n, i) => `№${i + 1} — ${n}`).join(' · ')}`; } catch {} })();
+      $('#shState').innerHTML = `Статус: <b>${st}</b> · фраза: «${esc(g.raw.join(' '))}» · начало ${new Date(g.starts_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} · конец ${new Date(g.ends_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}<br>Лучшая попытка: ${g.best} из ${g.raw.length} · попыток: ${g.tries}${g.solved_by ? ' · собрал: ' + esc(g.solved_by) : ''}<br>${r.holders && r.holders.length ? 'Держатели: ' + r.holders.map(h => `<b>${esc(h.nick)}</b> (${esc(h.group)}): ${esc(h.words.join(', '))}`).join(' · ') : g.k ? `Осколки получат топ-${g.k} в момент начала` : 'Осколков на руках: ' + r.dist.map((n, i) => `№${i + 1} — ${n}`).join(' · ')}`; } catch {} })();
   $('#shGo').onclick = async () => { if (!confirm('Запустить операцию «Осколки»? Если начало уже наступило — бот сразу объявит тревогу всем.')) return;
-    try { const r = await api('/api/admin/shards', { phrase: $('#shPh').value, starts_at: fromLocal($('#shSt').value), ends_at: fromLocal($('#shEn').value) }); $('#shok').textContent = r.state === 'active' ? ' Тревога объявлена!' : ' Запланировано'; } catch (e) { alert(e.message); } };
+    try { const r = await api('/api/admin/shards', { phrase: $('#shPh').value, starts_at: fromLocal($('#shSt').value), ends_at: fromLocal($('#shEn').value), top: Number($('#shTop').value) }); $('#shok').textContent = r.state === 'active' ? ' Тревога объявлена!' : ' Запланировано'; } catch (e) { alert(e.message); } };
   $('#shOff').onclick = async () => { if (confirm('Отменить операцию? Прогресс сотрётся.')) { await api('/api/admin/shards', { cancel: true }); $('#shok').textContent = ' Отменено'; } };
   const flashes = D.puzzles.filter(p => p.kind === 'flash' && !(p.published && p.opens_at <= Date.now()));
   $('#pane').insertAdjacentHTML('afterbegin', `<div class="card" id="goalCard"><b>🌙 Общая цель: «приведите друзей — открою ночной замок»</b>
@@ -304,6 +317,8 @@ function paneSet() {
     <p class="note">Анкета всегда доступна по ссылке <a href="/feedback" target="_blank">/feedback</a>. Галочка показывает на главной карточку «Оцени неделю». Включи в пятницу после финала и отправь ссылку через «Рассылку». Ответы появятся в <a href="/report" target="_blank">/report</a>.</p>
     <label class="chk"><input type="checkbox" id="fbOn" ${D.feedback_on ? 'checked' : ''}> Показывать анкету на главной</label><span class="ok" id="fbok"></span></div>`);
   $('#fbOn').onchange = async e => { await api('/api/admin/settings', { feedback_on: e.target.checked }); $('#fbok').textContent = ' Сохранено'; };
+  // Самое срочное — наверх: скрытие таблицы, осколки, общая цель.
+  ['#goalCard', '#shCard', '#hideCard'].forEach(id => { const e = $(id); if (e) $('#pane').prepend(e); });
 }
 
 load();

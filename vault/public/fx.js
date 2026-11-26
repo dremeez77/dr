@@ -75,7 +75,7 @@ window.FX = (() => {
       const e = t - t0;
       c.clearRect(0, 0, W, H);
       for (const p of parts) { p.x += p.vx; p.y += p.vy; p.vy += .12; p.vx *= .985; c.globalAlpha = Math.max(0, 1 - e / 1800); c.fillStyle = p.c; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 6.283); c.fill(); }
-      const k = Math.min(1, Math.max(0, (e - 350) / 900)); b.textContent = '+' + Math.round(points * (1 - Math.pow(1 - k, 3)));
+      const k = Math.min(1, Math.max(0, (e - 350) / 900)); b.textContent = points == null ? '✓' : '+' + Math.round(points * (1 - Math.pow(1 - k, 3)));
       if (e < 2400) requestAnimationFrame(step); else { ov.classList.add('out'); setTimeout(() => ov.remove(), 500); }
     };
     requestAnimationFrame(step);
