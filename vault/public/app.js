@@ -714,7 +714,13 @@ document.addEventListener('keydown', e => {
 });
 
 const lockBreakdown = $('#lockBreakdown');
-lockBreakdown.addEventListener('close', () => $('#lockBreakdownVideo').pause());
+if (lockBreakdown) {
+  const lockVideos = Array.from(lockBreakdown.querySelectorAll('video'));
+  lockBreakdown.addEventListener('close', () => lockVideos.forEach(video => video.pause()));
+  lockVideos.forEach(video => video.addEventListener('play', () => {
+    lockVideos.filter(other => other !== video).forEach(other => other.pause());
+  }));
+}
 window.addEventListener('hashchange', go);
 (async () => {
   await refresh(); await go();
