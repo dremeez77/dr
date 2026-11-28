@@ -32,6 +32,22 @@
   <main id="view"><p class="muted">Загрузка…</p></main>
   <footer>Неделя финансовой грамотности СПбГАУ · 23–27 ноября · <a href="/board">Таблица на большой экран</a></footer>
 </div>
+<dialog id="lockBreakdown" aria-labelledby="lockBreakdownTitle" style="width:min(850px,calc(100% - 32px));max-height:calc(100% - 32px);padding:clamp(16px,4vw,28px);border:1px solid var(--line);border-radius:16px;background:#0c1930;color:var(--text);box-sizing:border-box">
+  <form method="dialog" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <h2 id="lockBreakdownTitle" style="margin:0;text-transform:none">Разбор замков</h2>
+    <button class="ghost small" autofocus>Закрыть</button>
+  </form>
+  <h3>Замок №4 · Мелкий шрифт</h3>
+  <video id="lockBreakdownVideo" controls playsinline preload="none" width="1280" height="720" aria-label="Видеоразбор замка «Мелкий шрифт»" style="display:block;width:100%;height:auto;aspect-ratio:16/9;background:#071122;border-radius:10px">
+    <source src="https://raw.githubusercontent.com/dremeez77/dr/vault-production/vault/public/media/lock-4-review.mp4" type="video/mp4">
+  </video>
+  <p class="muted" style="font-size:14px">58 секунд · пояснения на экране</p>
+  <details>
+    <summary>Текст разбора</summary>
+    <p>По графику студент платит 8 787 ₽ × 12 = 105 444 ₽. Страховка за год стоит 14 400 ₽. При выдаче кредита банк удержал 2 500 ₽. СМС стоят 1 188 ₽, пакет «Комфорт» — 1 900 ₽. Штрафов нет, потому что студент платил вовремя.</p>
+    <p>Хранитель назвал тариф на мероприятии: 137 ₽ за приём каждого платежа, всего 1 644 ₽. С учётом всех расходов получается 127 076 ₽. Переплата относительно суммы кредита 100 000 ₽ составляет <strong>27 076 ₽</strong>.</p>
+  </details>
+</dialog>
 <div id="modal"></div>
 <script src="/vendor/qrcode.js"></script>
 <script src="/fx.js"></script>

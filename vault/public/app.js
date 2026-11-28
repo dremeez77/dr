@@ -372,6 +372,7 @@ function renderHome() {
       <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:16px">
         ${S.cert_on ? '<button type="button" id="endingCertificate">Получить сертификат</button>' : ''}
         <button type="button" class="ghost" id="endingResults">Смотреть итоги</button>
+        <button type="button" class="ghost" id="endingBreakdown">Разбор замков</button>
       </div>` : `
       <div class="orb-wrap${vaultOpen() ? ' vopen' : ''}" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>${boltsHtml()}
         <svg class="keyhole" viewBox="0 0 54 80"><circle cx="27" cy="22" r="16"/><path d="M27 30 L14 74 L40 74 Z"/></svg></div>
@@ -416,6 +417,7 @@ function renderHome() {
     };
     const certificate = $('#endingCertificate');
     if (certificate) certificate.onclick = requestEndingCertificate;
+    $('#endingBreakdown').onclick = () => $('#lockBreakdown').showModal();
     $('#endingResults').onclick = () => {
       const leaders = $('#endingLeaderboard');
       leaders.focus({ preventScroll: true });
@@ -711,6 +713,8 @@ document.addEventListener('keydown', e => {
   if (typed === 'хранитель' || typed === '[hfybntkm') { typed = ''; keeperToast('Ты меня звал? — Х.', true); }
 });
 
+const lockBreakdown = $('#lockBreakdown');
+lockBreakdown.addEventListener('close', () => $('#lockBreakdownVideo').pause());
 window.addEventListener('hashchange', go);
 (async () => {
   await refresh(); await go();
