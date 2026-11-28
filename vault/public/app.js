@@ -327,13 +327,25 @@ function inviteHtml() {
     <span class="muted" style="font-size:14px">Пришли по твоей ссылке: ${i.friends}${i.pending ? ` · ещё ${i.pending} не решили ни одной загадки` : ''}${left ? '' : ' · лимит бонусов набран'}</span></div></div></div>`;
 }
 
-let endingRevealed = false;
+let endingClicks = 0;
+let certificateAfterLogin = false;
+
+function requestEndingCertificate() {
+  if (S.user?.nick) return openCert();
+  if (!Object.values(S.login || {}).some(Boolean)) {
+    modal('<h3>Получить сертификат</h3><p>Для сертификата нужен вход в аккаунт участника. Вход сейчас недоступен.</p>');
+    return;
+  }
+  certificateAfterLogin = true;
+  openLogin();
+}
+
 function renderHome() {
   if (!S) return;
   const flash = S.puzzles.filter(p => p.kind === 'flash'), ps = S.puzzles.filter(p => p.kind !== 'warmup' && p.kind !== 'flash'), warm = S.puzzles.filter(p => p.kind === 'warmup' && p.open);
   const next = ps.find(p => !p.open && p.opens_at > serverNow());
   let nextHtml;
-  if (over()) nextHtml = `<div class="next"><span class="cd">Итоги ниже</span></div>`;
+  if (over()) nextHtml = '';
   else if (next) nextHtml = `<div class="next"><span class="lbl"><i class="pulse-dot"></i>Замок №${next.num} откроется через</span>${tilesHtml(next.opens_at)}<span class="muted" style="font-size:13px">${esc(fmtWhen(next.opens_at))}</span></div>`;
   else if (ps.length) nextHtml = `<div class="next"><span class="lbl">Все замки открыты</span><span class="cd">Успей решить</span></div>`;
   else nextHtml = `<div class="next"><span class="lbl">Скоро</span><span class="cd">Ждите сигнала</span></div>`;
@@ -355,7 +367,12 @@ function renderHome() {
   document.body.classList.toggle('alarm', !!(S.shards && S.shards.state === 'active'));
   $('#view').innerHTML = `${over() ? '' : shardsHtml()}
     <section class="hero">
-      ${over() ? `<button type="button" id="endingTitle" class="ghost grad" style="border:0;font:800 clamp(48px, 12vw, 96px)/1.1 var(--sans);margin:0 0 22px">Конец${endingRevealed ? '?' : ''}</button><div>${nextHtml}</div>` : `
+      ${over() ? `<button type="button" id="endingTitle" class="ghost grad" aria-controls="endingMessage" aria-expanded="${endingClicks === 2}" style="border:0;font:800 clamp(48px, 12vw, 96px)/1.1 var(--sans);margin:0 0 22px">Конец${endingClicks ? '?' : ''}</button>
+      <p id="endingMessage" role="status" ${endingClicks === 2 ? '' : 'hidden'}>Хранилище закрыто. Хранитель ещё на связи.</p>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:16px">
+        ${S.cert_on ? '<button type="button" id="endingCertificate">Получить сертификат</button>' : ''}
+        <button type="button" class="ghost" id="endingResults">Смотреть итоги</button>
+      </div>` : `
       <div class="orb-wrap${vaultOpen() ? ' vopen' : ''}" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>${boltsHtml()}
         <svg class="keyhole" viewBox="0 0 54 80"><circle cx="27" cy="22" r="16"/><path d="M27 30 L14 74 L40 74 Z"/></svg></div>
       <h1>Четыре замка.<br><span class="grad">Один приз.</span></h1>
@@ -375,7 +392,7 @@ function renderHome() {
     ${warm.length ? `<h2>Разминка дня</h2><div class="locks">${warm.map(p => p.solved
       ? `<a class="lock solved" href="#/lock/${p.num}"><span class="n">РАЗМИНКА · РЕШЕНО</span><span class="t">${esc(p.title)}</span><span class="big">${PTS(p.solved.points)}</span><span class="sub">ответили верно: ${p.solvers}</span></a>`
       : `<a class="lock open" href="#/lock/${p.num}"><span class="n">РАЗМИНКА · БЕЗ СПЕШКИ</span><span class="t">${esc(p.title)}</span><span class="big">${p.max_points}</span><span class="sub">баллов каждому · ответили: ${p.solvers}</span></a>`).join('')}</div>` : ''}
-    <h2>Лидеры${board ? ` · участников: ${board.players}` : ''}</h2>
+    <h2 id="endingLeaderboard" tabindex="-1">Лидеры${board ? ` · участников: ${board.players}` : ''}</h2>
     ${boardHtml(15)}
     ${groupsHtml()}
     <h2>Правила</h2>
@@ -390,10 +407,21 @@ function renderHome() {
       <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые прозвучали на открытии и на мероприятиях недели.</span></div>
     </div>`;
   const endingTitle = $('#endingTitle');
-  if (endingTitle) endingTitle.onclick = () => {
-    endingRevealed = true;
-    endingTitle.textContent = 'Конец?';
-  };
+  if (endingTitle) {
+    endingTitle.onclick = () => {
+      endingClicks = Math.min(2, endingClicks + 1);
+      endingTitle.textContent = 'Конец?';
+      endingTitle.setAttribute('aria-expanded', String(endingClicks === 2));
+      $('#endingMessage').hidden = endingClicks < 2;
+    };
+    const certificate = $('#endingCertificate');
+    if (certificate) certificate.onclick = requestEndingCertificate;
+    $('#endingResults').onclick = () => {
+      const leaders = $('#endingLeaderboard');
+      leaders.focus({ preventScroll: true });
+      leaders.scrollIntoView({ block: 'start' });
+    };
+  }
   const c = $('#cta'); if (c) c.onclick = openLogin;
   const dOpen = $('#depOpen'); if (dOpen) dOpen.onclick = async () => {
     const a = Number($('#depAmt').value);
@@ -545,7 +573,7 @@ function renderHints() {
 }
 
 // ---------- Вход ----------
-function closeModal() { clearInterval(pollTimer); $('#modal').innerHTML = ''; }
+function closeModal() { certificateAfterLogin = false; clearInterval(pollTimer); $('#modal').innerHTML = ''; }
 function modal(html) {
   $('#modal').innerHTML = `<div class="overlay" id="ov"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
   $('#ov').onclick = e => { if (e.target.id === 'ov') closeModal(); };
@@ -596,7 +624,14 @@ async function startLogin(provider) {
 
 async function afterLogin() {
   await refresh();
-  if (S.user && !S.user.nick) openProfile(); else { closeModal(); go(); }
+  if (S.user && !S.user.nick) {
+    openProfile();
+  } else {
+    const showCertificate = certificateAfterLogin && S.cert_on && S.user?.nick;
+    closeModal();
+    go();
+    if (showCertificate) openCert();
+  }
 }
 
 function openProfile() {
@@ -607,7 +642,10 @@ function openProfile() {
     <div class="err" id="perr"></div><button style="width:100%">Начать игру</button></form>`);
   $('#pf').onsubmit = async e => {
     e.preventDefault();
-    try { await api('/api/profile', { nick: $('#nick').value, group: $('#grp').value, staff: $('#staff').checked }); closeModal(); await refresh(); go(); }
+    try {
+      await api('/api/profile', { nick: $('#nick').value, group: $('#grp').value, staff: $('#staff').checked });
+      await afterLogin();
+    }
     catch (err) { $('#perr').textContent = err.message; }
   };
   $('#staff').onchange = e => { $('#grpLbl').textContent = e.target.checked ? 'Кафедра' : 'Группа'; $('#grp').placeholder = e.target.checked ? 'Например, Финансы' : 'Например, Ф-21'; };
