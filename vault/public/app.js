@@ -327,12 +327,13 @@ function inviteHtml() {
     <span class="muted" style="font-size:14px">Пришли по твоей ссылке: ${i.friends}${i.pending ? ` · ещё ${i.pending} не решили ни одной загадки` : ''}${left ? '' : ' · лимит бонусов набран'}</span></div></div></div>`;
 }
 
+let endingRevealed = false;
 function renderHome() {
   if (!S) return;
   const flash = S.puzzles.filter(p => p.kind === 'flash'), ps = S.puzzles.filter(p => p.kind !== 'warmup' && p.kind !== 'flash'), warm = S.puzzles.filter(p => p.kind === 'warmup' && p.open);
   const next = ps.find(p => !p.open && p.opens_at > serverNow());
   let nextHtml;
-  if (over()) nextHtml = `<div class="next"><span class="lbl">Игра завершена</span><span class="cd">Итоги ниже</span></div>`;
+  if (over()) nextHtml = `<div class="next"><span class="cd">Итоги ниже</span></div>`;
   else if (next) nextHtml = `<div class="next"><span class="lbl"><i class="pulse-dot"></i>Замок №${next.num} откроется через</span>${tilesHtml(next.opens_at)}<span class="muted" style="font-size:13px">${esc(fmtWhen(next.opens_at))}</span></div>`;
   else if (ps.length) nextHtml = `<div class="next"><span class="lbl">Все замки открыты</span><span class="cd">Успей решить</span></div>`;
   else nextHtml = `<div class="next"><span class="lbl">Скоро</span><span class="cd">Ждите сигнала</span></div>`;
@@ -352,14 +353,15 @@ function renderHome() {
 
   const before = FX.capture($('#view'));
   document.body.classList.toggle('alarm', !!(S.shards && S.shards.state === 'active'));
-  $('#view').innerHTML = `${shardsHtml()}
+  $('#view').innerHTML = `${over() ? '' : shardsHtml()}
     <section class="hero">
+      ${over() ? `<button type="button" id="endingTitle" class="ghost grad" style="border:0;font:800 clamp(48px, 12vw, 96px)/1.1 var(--sans);margin:0 0 22px">Конец${endingRevealed ? '?' : ''}</button><div>${nextHtml}</div>` : `
       <div class="orb-wrap${vaultOpen() ? ' vopen' : ''}" aria-hidden="true"><div class="orb"></div><div class="orbit"></div><div class="orbit o2"></div>${boltsHtml()}
         <svg class="keyhole" viewBox="0 0 54 80"><circle cx="27" cy="22" r="16"/><path d="M27 30 L14 74 L40 74 Z"/></svg></div>
       <h1>Четыре замка.<br><span class="grad">Один приз.</span></h1>
       <p>Приз от банка ВТБ заперт в хранилище. Каждый день открывается новая загадка. Кто решает раньше, получает больше баллов. Нейросеть не поможет: думать придётся самому.</p>
       ${nextHtml}${cta}
-      <p style="margin-top:18px;font-size:13px;letter-spacing:.08em">ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</p>
+      <p style="margin-top:18px;font-size:13px;letter-spacing:.08em">ПРИ ПОДДЕРЖКЕ БАНКА ВТБ</p>`}
     </section>
     ${feedbackHtml()}${flashHtml(flash)}${auctionHtml()}${depositHtml()}${meHtml()}${inviteHtml()}
     <h2>Как это устроено</h2>
@@ -387,6 +389,11 @@ function renderHome() {
       <div class="rule"><b>Играем по одному</b><span>Один человек — один аккаунт. Приз вручается лично, поэтому передавать ответы нет смысла.</span></div>
       <div class="rule"><b>Смотри вокруг</b><span>Не все ключи лежат в интернете. Некоторые прозвучали на открытии и на мероприятиях недели.</span></div>
     </div>`;
+  const endingTitle = $('#endingTitle');
+  if (endingTitle) endingTitle.onclick = () => {
+    endingRevealed = true;
+    endingTitle.textContent = 'Конец?';
+  };
   const c = $('#cta'); if (c) c.onclick = openLogin;
   const dOpen = $('#depOpen'); if (dOpen) dOpen.onclick = async () => {
     const a = Number($('#depAmt').value);
