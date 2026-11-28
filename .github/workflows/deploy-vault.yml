@@ -1,0 +1,66 @@
+name: Deploy Vault homepage
+
+on:
+  push:
+    branches: [vault-production]
+    paths:
+      - vault/public/app.js
+      - vault/public/index.html
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vault-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate homepage files
+        run: |
+          node --check vault/public/app.js
+          test -s vault/public/index.html
+      - name: Deploy homepage to Timeweb
+        env:
+          DEPLOY_KEY: ${{ secrets.VAULT_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KEY"
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" | tr -d '\r' > "$ssh_dir/key"
+          printf '%s\n' '200.169.184.17 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDUrTpW5LZxOfEl1SHUzbVPmSWMC2WoULxXCy5nm6vl0' > "$ssh_dir/hosts"
+          remote_script=$(cat <<'REMOTE'
+          set -eu
+          stage=$(mktemp -d)
+          trap 'rm -rf "$stage"' EXIT
+          target=/opt/dr/vault/public
+          tar -xf - -C "$stage" app.js index.html
+          test -s "$stage/app.js"
+          test -s "$stage/index.html"
+          test -w "$target/app.js"
+          test -w "$target/index.html"
+          cp "$target/app.js" "$stage/app.js.previous"
+          cp "$target/index.html" "$stage/index.html.previous"
+          if ! (cat "$stage/app.js" > "$target/app.js" &&
+                cat "$stage/index.html" > "$target/index.html" &&
+                cmp -s "$stage/app.js" "$target/app.js" &&
+                cmp -s "$stage/index.html" "$target/index.html"); then
+            cat "$stage/app.js.previous" > "$target/app.js"
+            cat "$stage/index.html.previous" > "$target/index.html"
+            exit 1
+          fi
+          REMOTE
+          )
+          tar -C vault/public -cf - app.js index.html |
+            ssh -T -i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o ConnectTimeout=10 -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$ssh_dir/hosts" vault-deploy@200.169.184.17 "$remote_script"
